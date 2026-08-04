@@ -1,0 +1,17 @@
+{
+  "output_dir": "data_smoke",
+  "flush_rows": 100,
+  "flush_seconds": 1,
+  "include_raw_message": false,
+  "streams": [
+    {
+      "enabled": true,
+      "exchange": "binance",
+      "market": "um_futures",
+      "symbol": "BTCUSDT",
+      "channels": ["depth", "trades"],
+      "depth_speed": "100ms",
+      "snapshot_limit": 100
+    }
+  ]
+}

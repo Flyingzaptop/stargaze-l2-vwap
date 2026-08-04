@@ -1,0 +1,39 @@
+{
+  "output_dir": "data_public_smoke",
+  "flush_rows": 100,
+  "flush_seconds": 1,
+  "include_raw_message": false,
+  "streams": [
+    {
+      "enabled": true,
+      "exchange": "okx",
+      "market": "swap",
+      "symbol": "BTC-USDT-SWAP",
+      "channels": ["books", "trades"],
+      "book_channel": "books"
+    },
+    {
+      "enabled": true,
+      "exchange": "bybit",
+      "market": "linear",
+      "symbol": "BTCUSDT",
+      "channels": ["orderbook", "trades"],
+      "orderbook_depth": 1000
+    },
+    {
+      "enabled": true,
+      "exchange": "coinbase",
+      "market": "spot",
+      "symbol": "BTC-USD",
+      "channels": ["level2", "market_trades"]
+    },
+    {
+      "enabled": true,
+      "exchange": "kraken",
+      "market": "spot",
+      "symbol": "BTC/USD",
+      "channels": ["book", "trade", "level3"],
+      "book_depth": 1000
+    }
+  ]
+}

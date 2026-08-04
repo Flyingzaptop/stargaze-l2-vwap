@@ -1,0 +1,85 @@
+{
+  "output_dir": "D:/MarketRecorder/dataset",
+  "flush_rows": 5000,
+  "flush_seconds": 5,
+  "include_raw_message": true,
+  "streams": [
+    {
+      "enabled": true,
+      "exchange": "binance",
+      "market": "spot",
+      "symbol": "BTCUSDT",
+      "channels": ["depth", "trades"],
+      "depth_speed": "100ms",
+      "depth_idle_timeout_seconds": 15,
+      "snapshot_limit": 5000
+    },
+    {
+      "enabled": true,
+      "exchange": "binance",
+      "market": "um_futures",
+      "symbol": "BTCUSDT",
+      "channels": ["depth", "trades", "markPrice", "forceOrder"],
+      "depth_speed": "100ms",
+      "depth_idle_timeout_seconds": 15,
+      "snapshot_limit": 1000
+    },
+    {
+      "enabled": true,
+      "exchange": "okx",
+      "market": "swap",
+      "symbol": "BTC-USDT-SWAP",
+      "channels": ["books", "trades"],
+      "book_channel": "books"
+    },
+    {
+      "enabled": true,
+      "exchange": "bybit",
+      "market": "linear",
+      "symbol": "BTCUSDT",
+      "channels": ["orderbook", "trades", "tickers", "allLiquidation"],
+      "orderbook_depth": 1000
+    },
+    {
+      "enabled": true,
+      "exchange": "coinbase",
+      "market": "spot",
+      "symbol": "BTC-USD",
+      "channels": ["level2", "market_trades"]
+    },
+    {
+      "enabled": true,
+      "exchange": "kraken",
+      "market": "spot",
+      "symbol": "BTC/USD",
+      "channels": ["book", "trade", "level3"],
+      "book_depth": 1000,
+      "level3_depth": 1000
+    },
+    {
+      "enabled": true,
+      "exchange": "deribit",
+      "market": "perpetual",
+      "symbol": "BTC-PERPETUAL",
+      "channels": ["book", "trades", "ticker"],
+      "book_interval": "100ms",
+      "trades_interval": "100ms",
+      "ticker_interval": "100ms"
+    },
+    {
+      "enabled": true,
+      "exchange": "bitfinex",
+      "market": "spot",
+      "symbol": "tBTCUSD",
+      "channels": ["book", "trades"],
+      "book_length": 250
+    },
+    {
+      "enabled": true,
+      "exchange": "hyperliquid",
+      "market": "perpetual",
+      "symbol": "BTC",
+      "channels": ["l2Book", "trades", "activeAssetCtx"]
+    }
+  ]
+}

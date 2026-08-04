@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+import numpy as np
+import polars as pl
+
+from stargaze_ml.gold.l2_open_events import build_open_policy_data
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seconds", type=Path, default=Path("runs/gold_l2_policy_v2/l2_seconds.parquet"))
+    parser.add_argument("--base", type=Path, default=Path("runs/gold_l2_policy_v2/prepared_l2_policy.npz"))
+    parser.add_argument("--out-dir", type=Path, default=Path("runs/gold_l2_open_v1"))
+    parser.add_argument("--amplitude-ticks", type=float, default=230.0)
+    parser.add_argument("--gate-fraction", type=float, default=0.75)
+    parser.add_argument("--primary-vwap", default="60")
+    parser.add_argument("--match-train-good-events", type=int)
+    args = parser.parse_args()
+    out = args.out_dir.resolve(); out.mkdir(parents=True, exist_ok=True)
+    seconds = pl.read_parquet(args.seconds.resolve(strict=True))
+    with np.load(args.base.resolve(strict=True), allow_pickle=False) as old:
+        train_end = int(old["train_end"]); validation_end = int(old["validation_end"])
+    primary_vwap: int | str = (
+        "ribbon" if args.primary_vwap == "ribbon" else int(args.primary_vwap)
+    )
+    amplitude_ticks = float(args.amplitude_ticks)
+    if args.match_train_good_events:
+        pilot = build_open_policy_data(
+            seconds, amplitude_threshold_ticks=1.0,
+            gate_fraction=args.gate_fraction, primary_vwap=primary_vwap,
+        )
+        pilot_events = (
+            (pilot.excursions.crossing_2 + 1 < train_end)
+            & (pilot.excursions.duration_seconds >= 30.0)
+        )
+        candidates = np.sort(pilot.excursions.amplitude_ticks[pilot_events])
+        target = min(int(args.match_train_good_events), len(candidates))
+        if target < 1:
+            raise ValueError("no train excursions available for amplitude calibration")
+        amplitude_ticks = float(candidates[-target])
+    data = build_open_policy_data(
+        seconds, amplitude_threshold_ticks=amplitude_ticks,
+        gate_fraction=args.gate_fraction, primary_vwap=primary_vwap,
+    )
+    e = data.excursions
+    np.savez_compressed(
+        out / "prepared_l2_open_policy.npz",
+        ts_ns=seconds["bar_start_ns"].to_numpy(), segment_id=seconds["segment_id"].to_numpy(),
+        x=data.x, feature_names=np.asarray(data.feature_names), valid_feature=data.valid_feature,
+        observed=seconds["observed"].to_numpy(), first_bid=seconds["first_bid"].to_numpy(),
+        first_ask=seconds["first_ask"].to_numpy(), last_bid=seconds["last_bid"].to_numpy(),
+        last_ask=seconds["last_ask"].to_numpy(), mid=data.mid, primary_vwap=data.primary_vwap,
+        side=data.side, event_id=data.event_id, gate_open=data.gate_open,
+        event_start=e.start, event_end=e.end, event_crossing_1=e.crossing_1,
+        event_crossing_2=e.crossing_2, event_side=e.side,
+        event_duration_seconds=e.duration_seconds, event_amplitude_ticks=e.amplitude_ticks,
+        event_gate_index=e.gate_index, event_gated=e.gated, event_good=e.good,
+        train_end=np.asarray(train_end), validation_end=np.asarray(validation_end),
+    )
+    train_events = e.crossing_2 + 1 < train_end
+    manifest = {
+        "rows": len(data.x), "features": list(data.feature_names),
+        "primary_vwap": str(primary_vwap),
+        "direction": "handled by a separate direction model",
+        "amplitude_threshold_ticks": amplitude_ticks,
+        "gate_fraction": args.gate_fraction,
+        "gate_ticks": amplitude_ticks * args.gate_fraction,
+        "min_duration_seconds": 30,
+        "train_events": int(train_events.sum()),
+        "train_gated_events": int((train_events & e.gated).sum()),
+        "train_good_events": int((train_events & e.good).sum()),
+    }
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    print(json.dumps(manifest), flush=True)
+
+
+if __name__ == "__main__":
+    main()

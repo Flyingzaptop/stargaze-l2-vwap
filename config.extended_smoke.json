@@ -1,0 +1,13 @@
+{
+  "output_dir": "data_extended_smoke",
+  "flush_rows": 1000,
+  "flush_seconds": 2,
+  "include_raw_message": true,
+  "streams": [
+    {"enabled": true, "exchange": "binance", "market": "spot", "symbol": "BTCUSDT", "channels": ["depth", "trades"], "depth_speed": "100ms", "snapshot_limit": 5000},
+    {"enabled": true, "exchange": "binance", "market": "um_futures", "symbol": "BTCUSDT", "channels": ["depth", "trades", "markPrice", "forceOrder"], "depth_speed": "100ms", "snapshot_limit": 1000},
+    {"enabled": true, "exchange": "deribit", "market": "perpetual", "symbol": "BTC-PERPETUAL", "channels": ["book", "trades", "ticker"], "book_interval": "100ms", "trades_interval": "100ms", "ticker_interval": "100ms"},
+    {"enabled": true, "exchange": "bitfinex", "market": "spot", "symbol": "tBTCUSD", "channels": ["book", "trades"], "book_length": 250},
+    {"enabled": true, "exchange": "hyperliquid", "market": "perpetual", "symbol": "BTC", "channels": ["l2Book", "trades", "activeAssetCtx"]}
+  ]
+}
