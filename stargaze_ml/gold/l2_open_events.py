@@ -8,6 +8,7 @@ import numpy as np
 import polars as pl
 
 from .l2_seconds import _weighted_causal_average, build_l2_second_feature_matrix
+from .l2_adaptive_gate import causal_adaptive_gate
 
 
 VWAP_HORIZONS_SECONDS = (5, 10, 15, 30, 45, 60, 120, 300, 900)
@@ -97,6 +98,7 @@ def build_open_policy_data(
     horizons: tuple[int, ...] = VWAP_HORIZONS_SECONDS,
     primary_vwap: int | str = 60,
     feature_profile: str = "leadlag",
+    adaptive_gate_target_per_active_day: int | None = None,
 ) -> OpenPolicyData:
     """Build causal inputs and completed excursion metadata.
 
@@ -334,9 +336,42 @@ def build_open_policy_data(
         if hits.size:
             gate_indices[j] = left + int(hits[0])
     gated = gate_indices >= 0
-    good = (duration >= float(min_duration_seconds)) & (
-        amplitude >= float(amplitude_threshold_ticks)
-    )
+    if adaptive_gate_target_per_active_day is not None:
+        adaptive = causal_adaptive_gate(
+            ts_ns=base.ts_ns,
+            absolute_delta_ticks=np.abs(delta_ticks),
+            event_start=starts,
+            event_end=ends,
+            completed_amplitude_ticks=amplitude,
+            target_gated_events_per_active_day=int(adaptive_gate_target_per_active_day),
+            gate_fraction=gate_fraction,
+            fallback_amplitude_ticks=amplitude_threshold_ticks,
+        )
+        gate_open = adaptive.gate_open
+        gate_indices = adaptive.gate_index_by_event
+        gated = adaptive.gated_by_event
+        good = (duration >= float(min_duration_seconds)) & (
+            amplitude >= adaptive.amplitude_threshold_by_event
+        )
+        row_gate = np.full(n, gate_ticks, dtype=np.float64)
+        row_amplitude = np.full(n, amplitude_threshold_ticks, dtype=np.float64)
+        for event, (left, right) in enumerate(zip(starts, ends, strict=True)):
+            row_gate[left : right + 1] = adaptive.gate_threshold_by_event[event]
+            row_amplitude[left : right + 1] = adaptive.amplitude_threshold_by_event[event]
+        geometry = geometry + (
+            row_gate,
+            row_amplitude,
+            np.abs(delta_ticks) / np.maximum(row_gate, 1e-6),
+        )
+        geometry_names = geometry_names + (
+            "event_adaptive_gate_ticks",
+            "event_adaptive_amplitude_ticks",
+            "event_delta_to_adaptive_gate_ratio",
+        )
+    else:
+        good = (duration >= float(min_duration_seconds)) & (
+            amplitude >= float(amplitude_threshold_ticks)
+        )
 
     x64 = np.column_stack((base.x.astype(np.float64), *extra_values, *geometry))
     valid = base.valid_feature & np.all(np.isfinite(x64), axis=1) & (side != 0)

@@ -26,7 +26,7 @@ raw cTrader demo L2
   -> bid/ask quote-VWAPs: 5/10/15/30/45/60/120/300/900s
   -> VWAP ribbon geometry + causal PRICE<->VWAP lead/lag response
   -> excursions between price/primary-VWAP crossings
-  -> amplitude gate
+  -> fixed or causal adaptive amplitude gate
   -> LSTM entry policy
   -> separate magnitude- and tail-risk-aware direction policy
   -> next-BBO execution, spread, commission and slippage
@@ -144,13 +144,30 @@ python tools\prepare_gold_l2_open_policy.py `
   --out-dir runs\gold_l2_multihorizon\primary_60
 ```
 
+To keep the candidate rate more stable across changing volatility regimes, use
+the adaptive gate. Each event threshold is fixed at its start and is computed
+only from previously completed excursion amplitudes:
+
+```powershell
+python tools\prepare_gold_l2_open_policy.py `
+  --seconds runs\gold_l2_policy_v2\l2_seconds.parquet `
+  --base runs\gold_l2_policy_v2\prepared_l2_policy.npz `
+  --primary-vwap 60 --adaptive-gate-target 400 `
+  --out-dir runs\gold_l2_adaptive_gate\target400
+
+python tools\analyze_gold_l2_adaptive_gate.py `
+  --prepared runs\gold_l2_adaptive_gate\target400\prepared_l2_open_policy.npz `
+  --target 300 --target 400 `
+  --out runs\gold_l2_adaptive_gate\gate_report.json
+```
+
 ### Train entry and direction
 
 ```powershell
 python tools\train_gold_l2_open_policy.py `
   --prepared runs\gold_l2_multihorizon\primary_60\prepared_l2_open_policy.npz `
   --out-dir runs\gold_l2_multihorizon\primary_60\open_oracle `
-  --epochs 30 --reward-mode oracle_best --device auto
+  --epochs 30 --warmup-epochs 15 --reward-mode oracle_best --device auto
 
 python tools\train_gold_l2_profit_direction.py `
   --prepared runs\gold_l2_multihorizon\primary_60\prepared_l2_open_policy.npz `
@@ -173,22 +190,18 @@ python tools\evaluate_gold_l2_causal_rate.py `
   --device auto
 ```
 
-The current best validation-selected risk policy produced 474 fixed holdout
-trades: +93 ticks total, +0.20 ticks/trade, 59.3% wins, and -657 ticks at the
-5th percentile. This is an experimental near-break-even result, not evidence
-of deployable edge. Raw datasets, checkpoints, and reports remain gitignored.
-The adaptive threshold uses only earlier scores and enforces a validation-chosen
-10–25 trade daily cap. See [`L2_VWAP_EXPERIMENTS.md`](L2_VWAP_EXPERIMENTS.md)
-for the experiment ledger and limitations.
-
-Seed robustness is not yet sufficient: four identically configured tail-risk
-models ranged from +28 to -27 ticks/trade on the exploratory test, and their
-ensemble was negative. Treat the positive run as a hypothesis, not a result.
+The preferred four-seed ensemble produced +44.23 ticks/trade over 40 exploratory
+holdout trades with 72.5% wins, but its standard error was 45.37 ticks and the
+5th percentile was -663.4 ticks. This is not evidence of deployable edge. The
+adaptive score controller uses only earlier scores and enforces a
+validation-chosen 10-25 trade daily cap. See
+[`L2_VWAP_EXPERIMENTS.md`](L2_VWAP_EXPERIMENTS.md) for the full experiment
+ledger and limitations. Raw datasets and non-frozen runs remain gitignored.
 
 ### Tests
 
 ```powershell
-pytest -q
+python -m pytest -q
 ```
 
 Key implementation files:
@@ -200,6 +213,7 @@ Key implementation files:
 - `stargaze_ml/gold/l2_profit_direction.py` — magnitude-aware side/value model.
 - `stargaze_ml/gold/l2_risk_direction.py` — value, opportunity and tail-risk heads.
 - `stargaze_ml/gold/l2_causal_rate.py` — causal rolling-quantile rate controller.
+- `stargaze_ml/gold/l2_adaptive_gate.py` — prior-event-only adaptive excursion gate.
 - `stargaze_ml/gold/l2_dominance_override.py` — causal multi-VWAP dominance evidence and live-swap simulator.
 - `stargaze_ml/gold/l2_dominance_lstm.py` — symmetric PRICE/VWAP dominance sequence model.
 - `tests/test_gold_l2_*.py` — causal and execution-contract regression tests.

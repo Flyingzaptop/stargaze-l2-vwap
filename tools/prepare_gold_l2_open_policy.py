@@ -27,6 +27,7 @@ def main() -> None:
         help="prepare a forward-only dataset without borrowing historical split indices",
     )
     parser.add_argument("--policy-bundle", type=Path)
+    parser.add_argument("--adaptive-gate-target", type=int)
     args = parser.parse_args()
     out = args.out_dir.resolve(); out.mkdir(parents=True, exist_ok=True)
     seconds = pl.read_parquet(args.seconds.resolve(strict=True))
@@ -57,6 +58,7 @@ def main() -> None:
             gate_fraction=gate_fraction, primary_vwap=primary_vwap,
             feature_profile=feature_profile,
             min_duration_seconds=min_duration_seconds,
+            adaptive_gate_target_per_active_day=args.adaptive_gate_target,
         )
         pilot_events = (
             (pilot.excursions.crossing_2 + 1 < train_end)
@@ -72,6 +74,7 @@ def main() -> None:
         gate_fraction=gate_fraction, primary_vwap=primary_vwap,
         feature_profile=feature_profile,
         min_duration_seconds=min_duration_seconds,
+        adaptive_gate_target_per_active_day=args.adaptive_gate_target,
     )
     e = data.excursions
     np.savez_compressed(
@@ -99,6 +102,7 @@ def main() -> None:
         "gate_ticks": amplitude_ticks * gate_fraction,
         "min_duration_seconds": min_duration_seconds,
         "split_contract": "all_forward_test" if args.all_test else "borrowed_from_base",
+        "adaptive_gate_target_per_active_day": args.adaptive_gate_target,
         "train_events": int(train_events.sum()),
         "train_gated_events": int((train_events & e.gated).sum()),
         "train_good_events": int((train_events & e.good).sum()),
