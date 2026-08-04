@@ -34,10 +34,29 @@ def direction_and_score(
 
     tail = float(row["long_tail_probability"] if side > 0 else row["short_tail_probability"])
     predicted = float(row["predicted_long_pnl"] if side > 0 else row["predicted_short_pnl"])
+    long_risk = float(row["predicted_long_pnl"]) - penalty * float(row["long_tail_probability"])
+    short_risk = float(row["predicted_short_pnl"]) - penalty * float(row["short_tail_probability"])
+    side_std = float(row.get("side_probability_std", 0.0))
+    chosen_tail_std = float(
+        row.get("long_tail_probability_std", 0.0)
+        if side > 0 else row.get("short_tail_probability_std", 0.0)
+    )
+    risk_uncertainty = float(np.sqrt(
+        float(row.get("predicted_long_pnl_std", 0.0)) ** 2
+        + float(row.get("predicted_short_pnl_std", 0.0)) ** 2
+        + penalty ** 2 * (
+            float(row.get("long_tail_probability_std", 0.0)) ** 2
+            + float(row.get("short_tail_probability_std", 0.0)) ** 2
+        )
+    ))
     scores = {
         "opportunity_probability": float(row["opportunity_probability"]),
         "negative_tail_probability": -tail,
         "risk_edge": predicted - penalty * tail,
+        "negative_side_disagreement": -side_std,
+        "negative_tail_disagreement": -chosen_tail_std,
+        "negative_risk_uncertainty": -risk_uncertainty,
+        "risk_evidence": abs(long_risk - short_risk) / (1.0 + risk_uncertainty),
     }
     return side, scores[filter_field], tail
 
@@ -89,9 +108,18 @@ def summarize_selected(rows: list[dict[str, float | int]]) -> dict[str, float | 
     if not rows:
         return {"trades": 0, "mean_pnl_ticks": 0.0, "total_pnl_ticks": 0.0, "win_rate": 0.0}
     pnl = np.asarray([
-        float(row["long_pnl"] if int(row["selected_side"]) > 0 else row["short_pnl"])
+        float(
+            row["realized_pnl"]
+            if "realized_pnl" in row
+            else row["long_pnl"] if int(row["selected_side"]) > 0
+            else row["short_pnl"]
+        )
         for row in rows
     ])
+    p05 = float(np.quantile(pnl, 0.05))
+    cvar05 = float(pnl[pnl <= p05].mean())
+    gains = float(pnl[pnl > 0].sum())
+    losses = float(-pnl[pnl < 0].sum())
     days: dict[str, int] = {}
     for row in rows:
         key = str(int(row["entry_ts_ns"]) // DAY_NS)
@@ -102,7 +130,19 @@ def summarize_selected(rows: list[dict[str, float | int]]) -> dict[str, float | 
         "median_pnl_ticks": float(np.median(pnl)),
         "total_pnl_ticks": float(pnl.sum()),
         "win_rate": float((pnl > 0).mean()),
-        "p05_pnl_ticks": float(np.quantile(pnl, 0.05)),
+        "p05_pnl_ticks": p05,
+        "cvar05_pnl_ticks": cvar05,
+        "worst_pnl_ticks": float(pnl.min()),
+        "profit_factor": gains / losses if losses > 0 else float("inf"),
         "standard_error_ticks": float(pnl.std(ddof=1) / np.sqrt(len(pnl))) if len(pnl) > 1 else 0.0,
         "trades_by_day": days,
     }
+
+
+def robust_validation_score(metrics: dict[str, object]) -> float:
+    """Conservative PnL objective for small, heavy-tailed validation samples."""
+    return (
+        float(metrics["mean_pnl_ticks"])
+        + 0.10 * float(metrics.get("cvar05_pnl_ticks", 0.0))
+        - 0.50 * float(metrics.get("standard_error_ticks", 0.0))
+    )

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from stargaze_ml.gold.l2_causal_rate import CausalRateConfig, causal_rate_select
+from stargaze_ml.gold.l2_causal_rate import (
+    CausalRateConfig,
+    causal_rate_select,
+    robust_validation_score,
+    summarize_selected,
+)
 
 
 def _row(second: int, score: float) -> dict[str, float | int]:
@@ -39,3 +44,15 @@ def test_selector_enforces_daily_cap() -> None:
         fallback_cutoff=0.0, config=CausalRateConfig(target_trades_per_day=10),
     )
     assert len(selected) == 10
+
+
+def test_summary_and_robust_score_penalize_tail_loss() -> None:
+    rows = []
+    for second, pnl in enumerate((10.0, 20.0, -100.0)):
+        row = _row(second, 1.0)
+        row.update({"long_pnl": pnl, "selected_side": 1})
+        rows.append(row)
+    metrics = summarize_selected(rows)
+    assert metrics["worst_pnl_ticks"] == -100.0
+    assert metrics["cvar05_pnl_ticks"] == -100.0
+    assert robust_validation_score(metrics) < float(metrics["mean_pnl_ticks"])

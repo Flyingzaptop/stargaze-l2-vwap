@@ -37,6 +37,40 @@ The tail-500 run is the first near-positive fixed-test result: +2,807 ticks
 total over 100 trades. Its mean standard error is about 32 ticks, larger than
 the +28-tick mean, so this is not statistically established edge.
 
+### Seed and model robustness
+
+| Model | Validation-selected cap | Fixed test trades | Fixed test mean | Win rate |
+|---|---:|---:|---:|---:|
+| Tail-500 seed 10 | 25/day | 100 | +28.07 | 67.0% |
+| Tail-500 seed 11 | 10/day | 40 | +24.10 | 75.0% |
+| Tail-500 seed 12 | 20/day | 88 | -22.35 | 60.2% |
+| Tail-500 seed 13 | 10/day | 40 | -27.28 | 67.5% |
+| Four-seed ensemble | 10/day | 40 | -18.85 | 62.5% |
+| Snapshot gradient boosting | 10/day | 29 | -94.41 | 65.5% |
+
+The sign is seed-dependent despite similar validation AUC. High win rates and
+positive medians coexist with negative means because a few wrong-side trades
+dominate total PnL.
+
+### Dominance diagnosis
+
+In the positive seed-10 test, five losses below -500 ticks contributed -4,933
+ticks while the other 95 trades contributed +7,740. All five were incorrect
+longs. At entry, price was below most VWAP horizons while 5–120 second VWAP
+slopes were already following price downward: a clear PRICE-dominance pattern.
+
+Several causal implementations were tested without test-based authorization:
+
+- A deterministic multi-horizon entry override was rejected by validation.
+- A live, confirmation-based dominance swap improved validation but reduced
+  test mean from +28.07 to +12.01 because evidence often arrived after the loss.
+- A symmetric snapshot dominance model had validation/test AUC 0.43/0.50.
+- A symmetric LSTM dominance model reached entry AUC 0.59/0.56, but validation
+  selected no veto; the fixed strategy therefore kept the original side.
+
+The physical hypothesis remains plausible, but the current dataset cannot
+calibrate a safe dominance override. More untouched days are required.
+
 ## Causal rate control
 
 The fixed validation cutoff drifted from roughly 14 trades/day on validation

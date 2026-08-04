@@ -99,6 +99,10 @@ The adaptive threshold uses only earlier scores and enforces a validation-chosen
 10–25 trade daily cap. See [`L2_VWAP_EXPERIMENTS.md`](L2_VWAP_EXPERIMENTS.md)
 for the experiment ledger and limitations.
 
+Seed robustness is not yet sufficient: four identically configured tail-risk
+models ranged from +28 to -27 ticks/trade on the exploratory test, and their
+ensemble was negative. Treat the positive run as a hypothesis, not a result.
+
 ### Tests
 
 ```powershell
@@ -114,6 +118,8 @@ Key implementation files:
 - `stargaze_ml/gold/l2_profit_direction.py` — magnitude-aware side/value model.
 - `stargaze_ml/gold/l2_risk_direction.py` — value, opportunity and tail-risk heads.
 - `stargaze_ml/gold/l2_causal_rate.py` — causal rolling-quantile rate controller.
+- `stargaze_ml/gold/l2_dominance_override.py` — causal multi-VWAP dominance evidence and live-swap simulator.
+- `stargaze_ml/gold/l2_dominance_lstm.py` — symmetric PRICE/VWAP dominance sequence model.
 - `tests/test_gold_l2_*.py` — causal and execution-contract regression tests.
 
 ## Market data collector

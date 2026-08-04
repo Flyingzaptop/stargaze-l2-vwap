@@ -87,6 +87,7 @@ def main() -> None:
         "expected_candidates_per_day": expected,
         "validation_grid": grid, "selected_on_validation": best,
         "fixed_test": summarize_selected(test_chosen),
+        "fixed_test_trades": test_chosen,
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2), encoding="utf-8")
