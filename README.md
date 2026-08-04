@@ -52,6 +52,30 @@ Copy-Item secrets.gold.example.json secrets.gold.runtime.json
 
 The input Parquet/NPZ files are intentionally not stored in Git.
 
+To collect a fresh forward L2 sample from cTrader, run the live incremental
+depth recorder. It stores immutable raw-event parts and a causally reconstructed
+BBO snapshot after every depth update. cTrader depth events have no exchange
+timestamp, so `timestamp` is the local receive time in nanoseconds.
+
+```powershell
+python tools\record_gold_l2_live.py `
+  --secrets secrets.gold.runtime.json `
+  --symbol XAUUSD `
+  --out-dir runs\gold_l2_live
+```
+
+Use `--duration-seconds 60` for a short connection test. Runtime credentials and
+all recorded data remain gitignored.
+
+Convert the resulting snapshot stream into the same causal one-second contract
+used by the research pipeline:
+
+```powershell
+python tools\prepare_recorded_gold_l2_seconds.py `
+  --recording runs\gold_l2_live `
+  --output runs\gold_l2_live\l2_seconds.parquet
+```
+
 For a complete reproducible run, use the orchestrator. It fingerprints both
 inputs and writes a step-by-step `pipeline_manifest.json`:
 
