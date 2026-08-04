@@ -12,10 +12,10 @@ tools/*
 !tools/*.py
 *.spec
 recorder.log
-data/
-data_smoke/
-data_kraken_l3_smoke/
-data_extended_smoke/
+/data/
+/data_smoke/
+/data_kraken_l3_smoke/
+/data_extended_smoke/
 *.parquet
 *.parquet.inprogress
 *.log
