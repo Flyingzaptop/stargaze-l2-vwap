@@ -17,6 +17,7 @@ from stargaze_ml.gold.l2_open_policy import L2OpenPolicy
 from stargaze_ml.gold.l2_open_reinforce import OpenReinforceConfig, PreparedOpenData, _event_indices
 from stargaze_ml.gold.l2_risk_direction import L2RiskDirectionPolicy, RiskDirectionConfig, _trade_rows
 from stargaze_ml.training.data import RobustNormalizer
+from stargaze_ml.gold.l2_contracts import assert_feature_names
 
 
 def main() -> None:
@@ -35,6 +36,9 @@ def main() -> None:
     data = PreparedOpenData(args.prepared)
     open_state = torch.load(args.open_checkpoint, map_location=device, weights_only=False)
     risk_state = torch.load(args.risk_checkpoint, map_location=device, weights_only=False)
+    assert_feature_names(tuple(open_state["feature_names"]), data.feature_names, artifact="open checkpoint")
+    if "feature_names" in risk_state:
+        assert_feature_names(tuple(risk_state["feature_names"]), data.feature_names, artifact="risk checkpoint")
     market = OpenReinforceConfig(**risk_state["market_config"])
     risk_config = RiskDirectionConfig(**risk_state["config"])
     normalizer = RobustNormalizer.from_dict(risk_state["normalizer"])

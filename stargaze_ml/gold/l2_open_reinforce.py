@@ -12,6 +12,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from stargaze_ml.training.data import RobustNormalizer
 from .l2_open_policy import L2OpenPolicy, exploration_probability
+from .l2_contracts import validate_prepared_open_data
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,7 @@ class PreparedOpenData:
         self.train_end = int(np.asarray(self.train_end).item())
         self.validation_end = int(np.asarray(self.validation_end).item())
         self.feature_names = tuple(str(x) for x in self.feature_names.tolist())
+        validate_prepared_open_data(self)
 
 
 def _event_indices(data: PreparedOpenData, left: int, right: int, *, good_only: bool) -> np.ndarray:

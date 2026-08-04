@@ -18,6 +18,7 @@ from .l2_multivwap_side import _open_entries
 from .l2_open_policy import L2OpenPolicy
 from .l2_open_reinforce import OpenReinforceConfig, PreparedOpenData, _event_indices
 from .l2_profit_direction import ProfitDirectionConfig, _make_batch, executable_side_pnls
+from .l2_contracts import assert_feature_names
 
 
 @dataclass(frozen=True)
@@ -161,6 +162,7 @@ def train_risk_direction(
     device=torch.device("cuda" if device_name=="auto" and torch.cuda.is_available() else device_name if device_name!="auto" else "cpu")
     data=PreparedOpenData(prepared_path)
     checkpoint=torch.load(Path(open_checkpoint_path).resolve(strict=True),map_location=device,weights_only=False)
+    assert_feature_names(tuple(checkpoint["feature_names"]), data.feature_names, artifact="open checkpoint")
     market=OpenReinforceConfig(**checkpoint["config"]); normalizer=RobustNormalizer.from_dict(checkpoint["normalizer"])
     teacher=L2OpenPolicy(len(data.feature_names),market.hidden_size).to(device); teacher.load_state_dict(checkpoint["model_state"]); teacher.eval()
     for parameter in teacher.parameters(): parameter.requires_grad_(False)
@@ -248,5 +250,5 @@ def train_risk_direction(
         "selected_on_validation":selected,
         "fixed_test":fixed,
     }
-    out=Path(output_dir).resolve(); out.mkdir(parents=True,exist_ok=True); torch.save({"model_state":model.state_dict(),"config":asdict(config),"market_config":asdict(market),"normalizer":normalizer.to_dict(),"open_threshold":threshold,"evaluation":report},out/"final.pt"); (out/"report.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
+    out=Path(output_dir).resolve(); out.mkdir(parents=True,exist_ok=True); torch.save({"model_state":model.state_dict(),"config":asdict(config),"market_config":asdict(market),"normalizer":normalizer.to_dict(),"feature_names":data.feature_names,"open_threshold":threshold,"evaluation":report},out/"final.pt"); (out/"report.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
     return report

@@ -14,9 +14,12 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox
+from typing import TYPE_CHECKING
 
 from PIL import Image, ImageDraw
-import pystray
+
+if TYPE_CHECKING:
+    import pystray
 
 from market_collector.connectors import build_stream_tasks
 from market_collector.metrics import metrics
@@ -564,6 +567,8 @@ class DesktopApp:
         self.root.after(1000, self.refresh)
 
     def start_tray(self) -> None:
+        import pystray
+
         image = Image.new("RGB", (64, 64), (17, 24, 39))
         draw = ImageDraw.Draw(image)
         draw.ellipse((12, 12, 52, 52), fill=(34, 197, 94))
