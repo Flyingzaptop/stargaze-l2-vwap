@@ -86,6 +86,29 @@ def _pnl_ticks(data: PreparedOpenData, events: np.ndarray, entry_decision: np.nd
     return result
 
 
+def _first_valid_threshold_entry(
+    logits: np.ndarray,
+    *,
+    left: int,
+    gate: int,
+    crossing: int,
+    threshold: float,
+    valid_feature: np.ndarray,
+    observed: np.ndarray,
+) -> int:
+    """Return the first causal decision whose next-second execution is valid."""
+    first = max(left, gate)
+    if first >= crossing:
+        return -1
+    rows = np.arange(first, crossing, dtype=np.int64)
+    probabilities = 1.0 / (
+        1.0 + np.exp(-np.clip(logits[rows - left], -30.0, 30.0))
+    )
+    allowed = valid_feature[rows] & observed[rows + 1]
+    hits = np.flatnonzero(allowed & (probabilities >= threshold))
+    return int(rows[hits[0]]) if hits.size else -1
+
+
 def evaluate_thresholds(
     model: L2OpenPolicy, data: PreparedOpenData, events: np.ndarray,
     normalizer: RobustNormalizer, device: torch.device, config: OpenReinforceConfig,
@@ -101,10 +124,12 @@ def evaluate_thresholds(
     for threshold in candidates:
         entries=np.full(len(events),-1,dtype=np.int64)
         for j,ev in enumerate(events):
-            left=int(data.event_start[ev]); gate=int(data.event_gate_index[ev]); offset=gate-left
-            p=1/(1+np.exp(-np.clip(logits_by_event[j][offset:],-30,30)))
-            hit=np.flatnonzero(p>=threshold)
-            if hit.size: entries[j]=gate+int(hit[0])
+            left=int(data.event_start[ev]); gate=int(data.event_gate_index[ev])
+            entries[j]=_first_valid_threshold_entry(
+                logits_by_event[j], left=left, gate=gate,
+                crossing=int(data.event_crossing_1[ev]), threshold=float(threshold),
+                valid_feature=data.valid_feature, observed=data.observed,
+            )
         p1=_pnl_ticks(data,events,entries,1,config); p2=_pnl_ticks(data,events,entries,2,config)
         traded=entries>=0
         rows.append({"threshold":float(threshold),"trades":int(traded.sum()),

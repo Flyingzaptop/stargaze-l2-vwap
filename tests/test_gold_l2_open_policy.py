@@ -5,7 +5,13 @@ import torch
 
 from stargaze_ml.gold.l2_open_events import _carry_nonzero_sign
 from stargaze_ml.gold.l2_open_policy import L2OpenPolicy, exploration_probability
-from stargaze_ml.gold.l2_open_reinforce import OpenReinforceConfig, PreparedOpenData, _pnl_ticks, schedule
+from stargaze_ml.gold.l2_open_reinforce import (
+    OpenReinforceConfig,
+    PreparedOpenData,
+    _first_valid_threshold_entry,
+    _pnl_ticks,
+    schedule,
+)
 
 
 def test_zero_delta_inherits_side_but_segment_resets() -> None:
@@ -47,3 +53,20 @@ def test_oracle_reward_chooses_better_side() -> None:
     )
     reward = _pnl_ticks(data, np.asarray([0]), np.asarray([0]), 1, config)
     np.testing.assert_allclose(reward, [4.0])
+
+
+def test_threshold_entry_skips_missing_next_second_execution() -> None:
+    logits = np.asarray([0.0, 10.0, 9.0, 8.0], dtype=np.float32)
+    valid = np.ones(12, dtype=bool)
+    observed = np.ones(12, dtype=bool)
+    observed[7] = False
+    entry = _first_valid_threshold_entry(
+        logits,
+        left=5,
+        gate=6,
+        crossing=9,
+        threshold=0.9,
+        valid_feature=valid,
+        observed=observed,
+    )
+    assert entry == 7
