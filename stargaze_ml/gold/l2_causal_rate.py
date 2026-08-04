@@ -18,6 +18,71 @@ class CausalRateConfig:
     min_history: int = 100
 
 
+class CausalRateController:
+    """Stateful online form of the causal daily-rate selector."""
+
+    def __init__(
+        self,
+        *,
+        mode: str,
+        penalty: float,
+        filter_field: str,
+        expected_candidates_per_day: float,
+        fallback_cutoff: float,
+        config: CausalRateConfig,
+        initial_scores: list[float] | None = None,
+    ) -> None:
+        if expected_candidates_per_day <= 0:
+            raise ValueError("expected_candidates_per_day must be positive")
+        self.mode = str(mode)
+        self.penalty = float(penalty)
+        self.filter_field = str(filter_field)
+        self.fallback_cutoff = float(fallback_cutoff)
+        self.config = config
+        self.quantile = float(
+            np.clip(
+                1.0 - config.target_trades_per_day / expected_candidates_per_day,
+                0.0,
+                1.0,
+            )
+        )
+        self.history: deque[float] = deque(initial_scores or (), maxlen=config.history_size)
+        self.current_day: int | None = None
+        self.daily_count = 0
+
+    def consider(self, row: dict[str, float | int]) -> dict[str, float | int] | None:
+        day = int(row["entry_ts_ns"]) // DAY_NS
+        if day != self.current_day:
+            self.current_day = day
+            self.daily_count = 0
+        side, score, tail = direction_and_score(
+            row,
+            mode=self.mode,
+            penalty=self.penalty,
+            filter_field=self.filter_field,
+        )
+        cutoff = (
+            float(np.quantile(np.asarray(self.history, dtype=np.float64), self.quantile))
+            if len(self.history) >= self.config.min_history
+            else self.fallback_cutoff
+        )
+        accepted = self.daily_count < self.config.target_trades_per_day and score >= cutoff
+        self.history.append(score)
+        if not accepted:
+            return None
+        enriched = dict(row)
+        enriched.update(
+            {
+                "selected_side": side,
+                "selection_score": score,
+                "tail_probability": tail,
+                "causal_cutoff": cutoff,
+            }
+        )
+        self.daily_count += 1
+        return enriched
+
+
 def direction_and_score(
     row: dict[str, float | int], *, mode: str, penalty: float, filter_field: str
 ) -> tuple[int, float, float]:
@@ -73,34 +138,20 @@ def causal_rate_select(
     initial_scores: list[float] | None = None,
 ) -> list[dict[str, float | int]]:
     """Select using only scores observed strictly before each decision."""
-    if expected_candidates_per_day <= 0:
-        raise ValueError("expected_candidates_per_day must be positive")
-    quantile = float(np.clip(1.0 - config.target_trades_per_day / expected_candidates_per_day, 0.0, 1.0))
-    history: deque[float] = deque(initial_scores or (), maxlen=config.history_size)
+    controller = CausalRateController(
+        mode=mode,
+        penalty=penalty,
+        filter_field=filter_field,
+        expected_candidates_per_day=expected_candidates_per_day,
+        fallback_cutoff=fallback_cutoff,
+        config=config,
+        initial_scores=initial_scores,
+    )
     selected: list[dict[str, float | int]] = []
-    current_day: int | None = None
-    daily_count = 0
-
     for row in sorted(rows, key=lambda item: int(item["entry_ts_ns"])):
-        day = int(row["entry_ts_ns"]) // DAY_NS
-        if day != current_day:
-            current_day = day
-            daily_count = 0
-        side, score, tail = direction_and_score(
-            row, mode=mode, penalty=penalty, filter_field=filter_field
-        )
-        cutoff = (
-            float(np.quantile(np.asarray(history, dtype=np.float64), quantile))
-            if len(history) >= config.min_history
-            else fallback_cutoff
-        )
-        accepted = daily_count < config.target_trades_per_day and score >= cutoff
-        history.append(score)
-        if accepted:
-            enriched = dict(row)
-            enriched.update({"selected_side": side, "selection_score": score, "tail_probability": tail})
-            selected.append(enriched)
-            daily_count += 1
+        accepted = controller.consider(row)
+        if accepted is not None:
+            selected.append(accepted)
     return selected
 
 

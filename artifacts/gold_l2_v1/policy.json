@@ -85,6 +85,14 @@
     "event_current_to_max_ratio",
     "event_side"
   ],
+  "preparation": {
+    "primary_vwap": "60",
+    "feature_profile": "raw",
+    "amplitude_threshold_ticks": 323.3623046875,
+    "gate_fraction": 0.75,
+    "min_duration_seconds": 30,
+    "tick_size": 0.01
+  },
   "frozen_policy": {
     "mode": "risk",
     "penalty": 1000.0,

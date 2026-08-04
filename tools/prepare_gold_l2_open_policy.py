@@ -8,6 +8,7 @@ import numpy as np
 import polars as pl
 
 from stargaze_ml.gold.l2_open_events import build_open_policy_data
+from stargaze_ml.gold.frozen_policy import load_frozen_policy_bundle
 
 
 def main() -> None:
@@ -25,6 +26,7 @@ def main() -> None:
         action="store_true",
         help="prepare a forward-only dataset without borrowing historical split indices",
     )
+    parser.add_argument("--policy-bundle", type=Path)
     args = parser.parse_args()
     out = args.out_dir.resolve(); out.mkdir(parents=True, exist_ok=True)
     seconds = pl.read_parquet(args.seconds.resolve(strict=True))
@@ -34,15 +36,27 @@ def main() -> None:
     else:
         with np.load(args.base.resolve(strict=True), allow_pickle=False) as old:
             train_end = int(old["train_end"]); validation_end = int(old["validation_end"])
-    primary_vwap: int | str = (
-        "ribbon" if args.primary_vwap == "ribbon" else int(args.primary_vwap)
-    )
+    primary_text = args.primary_vwap
+    feature_profile = args.feature_profile
+    gate_fraction = float(args.gate_fraction)
     amplitude_ticks = float(args.amplitude_ticks)
+    min_duration_seconds = 30
+    if args.policy_bundle is not None:
+        if args.match_train_good_events:
+            raise ValueError("--policy-bundle cannot be combined with amplitude recalibration")
+        preparation = load_frozen_policy_bundle(args.policy_bundle).policy["preparation"]
+        primary_text = str(preparation["primary_vwap"])
+        feature_profile = str(preparation["feature_profile"])
+        gate_fraction = float(preparation["gate_fraction"])
+        amplitude_ticks = float(preparation["amplitude_threshold_ticks"])
+        min_duration_seconds = int(preparation["min_duration_seconds"])
+    primary_vwap: int | str = "ribbon" if primary_text == "ribbon" else int(primary_text)
     if args.match_train_good_events:
         pilot = build_open_policy_data(
             seconds, amplitude_threshold_ticks=1.0,
-            gate_fraction=args.gate_fraction, primary_vwap=primary_vwap,
-            feature_profile=args.feature_profile,
+            gate_fraction=gate_fraction, primary_vwap=primary_vwap,
+            feature_profile=feature_profile,
+            min_duration_seconds=min_duration_seconds,
         )
         pilot_events = (
             (pilot.excursions.crossing_2 + 1 < train_end)
@@ -55,8 +69,9 @@ def main() -> None:
         amplitude_ticks = float(candidates[-target])
     data = build_open_policy_data(
         seconds, amplitude_threshold_ticks=amplitude_ticks,
-        gate_fraction=args.gate_fraction, primary_vwap=primary_vwap,
-        feature_profile=args.feature_profile,
+        gate_fraction=gate_fraction, primary_vwap=primary_vwap,
+        feature_profile=feature_profile,
+        min_duration_seconds=min_duration_seconds,
     )
     e = data.excursions
     np.savez_compressed(
@@ -77,12 +92,12 @@ def main() -> None:
     manifest = {
         "rows": len(data.x), "features": list(data.feature_names),
         "primary_vwap": str(primary_vwap),
-        "feature_profile": args.feature_profile,
+        "feature_profile": feature_profile,
         "direction": "handled by a separate direction model",
         "amplitude_threshold_ticks": amplitude_ticks,
-        "gate_fraction": args.gate_fraction,
-        "gate_ticks": amplitude_ticks * args.gate_fraction,
-        "min_duration_seconds": 30,
+        "gate_fraction": gate_fraction,
+        "gate_ticks": amplitude_ticks * gate_fraction,
+        "min_duration_seconds": min_duration_seconds,
         "split_contract": "all_forward_test" if args.all_test else "borrowed_from_base",
         "train_events": int(train_events.sum()),
         "train_gated_events": int((train_events & e.gated).sum()),

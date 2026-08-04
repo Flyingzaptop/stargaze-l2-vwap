@@ -68,6 +68,8 @@ def test_atomic_parquet_part_writer_resumes_without_overwrite(tmp_path: Path) ->
     assert first is not None and first.name == "depth_00000001.parquet"
 
     resumed = AtomicParquetPartWriter(tmp_path, prefix="depth")
+    assert resumed.rows_written == 1
+    assert resumed.parts_written == 1
     resumed.append({"x": 2})
     second = resumed.flush()
     assert second is not None and second.name == "depth_00000002.parquet"

@@ -8,6 +8,7 @@ import torch
 
 from stargaze_ml.gold.l2_causal_rate import CausalRateConfig, causal_rate_select, summarize_selected
 from stargaze_ml.gold.l2_contracts import assert_feature_names
+from stargaze_ml.gold.frozen_policy import load_frozen_policy_bundle
 from stargaze_ml.gold.l2_open_policy import L2OpenPolicy
 from stargaze_ml.gold.l2_open_reinforce import OpenReinforceConfig, PreparedOpenData, _event_indices
 from stargaze_ml.gold.l2_risk_direction import (
@@ -21,9 +22,10 @@ from stargaze_ml.training.data import RobustNormalizer
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate a frozen policy on untouched forward L2")
     parser.add_argument("--prepared", type=Path, required=True)
-    parser.add_argument("--open-checkpoint", type=Path, required=True)
-    parser.add_argument("--risk-checkpoint", type=Path, required=True)
-    parser.add_argument("--policy-report", type=Path, required=True)
+    parser.add_argument("--bundle", type=Path)
+    parser.add_argument("--open-checkpoint", type=Path)
+    parser.add_argument("--risk-checkpoint", type=Path)
+    parser.add_argument("--policy-report", type=Path)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--device", default="auto")
     return parser.parse_args()
@@ -35,15 +37,25 @@ def main() -> int:
         "cuda" if args.device == "auto" and torch.cuda.is_available()
         else args.device if args.device != "auto" else "cpu"
     )
+    if args.bundle is not None:
+        bundle = load_frozen_policy_bundle(args.bundle)
+        open_path = bundle.open_checkpoint
+        risk_path = bundle.risk_checkpoint
+        policy_report = bundle.policy
+    else:
+        if args.open_checkpoint is None or args.risk_checkpoint is None or args.policy_report is None:
+            raise ValueError("provide --bundle or all three checkpoint/policy paths")
+        open_path = args.open_checkpoint.resolve(strict=True)
+        risk_path = args.risk_checkpoint.resolve(strict=True)
+        policy_report = json.loads(args.policy_report.resolve(strict=True).read_text(encoding="utf-8"))
     data = PreparedOpenData(args.prepared)
-    open_state = torch.load(args.open_checkpoint.resolve(strict=True), map_location=device, weights_only=False)
-    risk_state = torch.load(args.risk_checkpoint.resolve(strict=True), map_location=device, weights_only=False)
+    open_state = torch.load(open_path, map_location=device, weights_only=False)
+    risk_state = torch.load(risk_path, map_location=device, weights_only=False)
     assert_feature_names(tuple(open_state["feature_names"]), data.feature_names, artifact="open checkpoint")
     if "feature_names" in risk_state:
         assert_feature_names(tuple(risk_state["feature_names"]), data.feature_names, artifact="risk checkpoint")
     elif int(risk_state["model_state"]["lstm.weight_ih_l0"].shape[1]) != len(data.feature_names):
         raise ValueError("legacy risk checkpoint input width does not match prepared features")
-    policy_report = json.loads(args.policy_report.resolve(strict=True).read_text(encoding="utf-8"))
     if "frozen_policy" not in policy_report or not policy_report.get("score_history_tail"):
         raise ValueError("policy report lacks frozen_policy or causal score history")
     policy = policy_report["frozen_policy"]

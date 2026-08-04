@@ -104,17 +104,32 @@ class DepthBook:
 class AtomicParquetPartWriter:
     """Append rows as immutable atomic Parquet parts."""
 
-    def __init__(self, directory: Path, *, prefix: str) -> None:
+    def __init__(
+        self,
+        directory: Path,
+        *,
+        prefix: str,
+        schema_overrides: dict[str, pl.DataType] | None = None,
+    ) -> None:
         self.directory = Path(directory).expanduser().resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
         self.prefix = str(prefix)
+        self.schema_overrides = schema_overrides or {}
         existing = sorted(self.directory.glob(f"{self.prefix}_*.parquet"))
         self._index = 1
         if existing:
             self._index = max(int(path.stem.rsplit("_", 1)[1]) for path in existing) + 1
         self._rows: list[dict[str, Any]] = []
-        self.rows_written = 0
-        self.parts_written = 0
+        self.rows_written = self._existing_rows(existing)
+        self.parts_written = len(existing)
+
+    @staticmethod
+    def _existing_rows(paths: list[Path]) -> int:
+        if not paths:
+            return 0
+        import pyarrow.parquet as pq
+
+        return int(sum(pq.ParquetFile(path).metadata.num_rows for path in paths))
 
     def append(self, row: dict[str, Any]) -> None:
         self._rows.append(row)
@@ -128,7 +143,9 @@ class AtomicParquetPartWriter:
             return None
         path = self.directory / f"{self.prefix}_{self._index:08d}.parquet"
         temporary = path.with_suffix(path.suffix + ".inprogress")
-        pl.DataFrame(self._rows).write_parquet(temporary, compression="zstd", statistics=True)
+        pl.DataFrame(self._rows, schema_overrides=self.schema_overrides).write_parquet(
+            temporary, compression="zstd", statistics=True
+        )
         temporary.replace(path)
         count = len(self._rows)
         self._rows.clear()
@@ -159,24 +176,82 @@ class CTraderL2Recorder:
         self.symbol_name = str(symbol)
         self.output_dir = Path(output_dir).expanduser().resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self._validate_existing_manifest()
         self.flush_seconds = float(flush_seconds)
         self.max_buffer_rows = int(max_buffer_rows)
         self.progress = progress or (lambda _: None)
-        self.raw_writer = AtomicParquetPartWriter(self.output_dir / "raw_parts", prefix="depth")
+        self.raw_writer = AtomicParquetPartWriter(
+            self.output_dir / "raw_parts",
+            prefix="depth",
+            schema_overrides={
+                "timestamp": pl.Int64,
+                "receive_ns": pl.Int64,
+                "monotonic_ns": pl.Int64,
+                "event_sequence": pl.Int64,
+                "connection_segment": pl.Int32,
+                "symbol_id": pl.Int64,
+                "quote_id": pl.Int64,
+                "bid": pl.Float64,
+                "ask": pl.Float64,
+                "size": pl.Float64,
+                "type": pl.String,
+                "delete_known": pl.Boolean,
+            },
+        )
         self.snapshot_writer = AtomicParquetPartWriter(
-            self.output_dir / "snapshot_parts", prefix="snapshot"
+            self.output_dir / "snapshot_parts",
+            prefix="snapshot",
+            schema_overrides={
+                "timestamp": pl.Int64,
+                "receive_ns": pl.Int64,
+                "monotonic_ns": pl.Int64,
+                "event_sequence": pl.Int64,
+                "connection_segment": pl.Int32,
+                "symbol_id": pl.Int64,
+            },
         )
         self.book = DepthBook()
         self._client: Any | None = None
         self._reactor: Any | None = None
         self._symbol_id = 0
         self._symbol_digits: int | None = None
-        self._event_sequence = 0
-        self._connection_segment = 0
+        self._event_sequence, self._connection_segment = self._resume_counters()
+        self._initial_event_sequence = self._event_sequence
+        self._initial_snapshot_rows = self.snapshot_writer.rows_written
         self._started_ns = 0
         self._finished_ns = 0
         self._stopping = False
         self._error: BaseException | None = None
+
+    def _validate_existing_manifest(self) -> None:
+        path = self.output_dir / "manifest.json"
+        if not path.exists():
+            return
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if str(raw.get("host")) != self.credentials.host:
+            raise ValueError("existing recording uses a different cTrader host")
+        if int(raw.get("account_id", 0)) != self.credentials.account_id:
+            raise ValueError("existing recording uses a different cTrader account")
+        existing_symbol = str(raw.get("symbol", ""))
+        if existing_symbol and existing_symbol.upper() != self.symbol_name.upper():
+            raise ValueError("existing recording uses a different symbol")
+
+    def _resume_counters(self) -> tuple[int, int]:
+        maxima = [0, 0]
+        for directory, prefix in (
+            (self.output_dir / "raw_parts", "depth"),
+            (self.output_dir / "snapshot_parts", "snapshot"),
+        ):
+            paths = sorted(directory.glob(f"{prefix}_*.parquet"))
+            if not paths:
+                continue
+            frame = pl.read_parquet(
+                paths[-1], columns=["event_sequence", "connection_segment"]
+            )
+            if not frame.is_empty():
+                maxima[0] = max(maxima[0], int(frame["event_sequence"].max()))
+                maxima[1] = max(maxima[1], int(frame["connection_segment"].max()))
+        return maxima[0], maxima[1]
 
     def record(self, *, duration_seconds: float | None = None) -> dict[str, Any]:
         if duration_seconds is not None and duration_seconds <= 0:
@@ -210,11 +285,11 @@ class CTraderL2Recorder:
         reactor.run()
         self._flush()
         self._finished_ns = time.time_ns()
-        manifest = self._write_manifest()
         if self._error is not None:
             raise RuntimeError(f"cTrader L2 recording failed: {self._error}") from self._error
-        if self.snapshot_writer.rows_written == 0:
-            raise RuntimeError("cTrader returned no complete L2 book snapshots")
+        if self.snapshot_writer.rows_written <= self._initial_snapshot_rows:
+            raise RuntimeError("cTrader returned no new complete L2 book snapshots in this session")
+        manifest = self._write_manifest()
         return manifest
 
     def _send(self, request: Any, success: Callable[[Any], None], *, timeout: int = 30) -> None:
@@ -433,6 +508,7 @@ class CTraderL2Recorder:
             "started_ns": self._started_ns,
             "finished_ns": self._finished_ns,
             "events": self._event_sequence,
+            "session_events": self._event_sequence - self._initial_event_sequence,
             "connection_segments": self._connection_segment,
             "raw_rows": self.raw_writer.rows_written,
             "snapshot_rows": self.snapshot_writer.rows_written,

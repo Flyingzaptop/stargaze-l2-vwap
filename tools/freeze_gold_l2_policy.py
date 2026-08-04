@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -9,14 +8,7 @@ import shutil
 import torch
 
 from stargaze_ml.gold.l2_contracts import assert_feature_names
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+from stargaze_ml.gold.frozen_policy import file_sha256
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,6 +16,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--open-checkpoint", type=Path, required=True)
     parser.add_argument("--risk-checkpoint", type=Path, required=True)
     parser.add_argument("--policy-report", type=Path, required=True)
+    parser.add_argument("--preparation-manifest", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     return parser.parse_args()
 
@@ -33,6 +26,7 @@ def main() -> int:
     open_source = args.open_checkpoint.resolve(strict=True)
     risk_source = args.risk_checkpoint.resolve(strict=True)
     report_source = args.policy_report.resolve(strict=True)
+    preparation_source = args.preparation_manifest.resolve(strict=True)
     open_state = torch.load(open_source, map_location="cpu", weights_only=False)
     risk_state = torch.load(risk_source, map_location="cpu", weights_only=False)
     expected_features = tuple(open_state["feature_names"])
@@ -45,6 +39,7 @@ def main() -> int:
     elif int(risk_state["model_state"]["lstm.weight_ih_l0"].shape[1]) != len(expected_features):
         raise ValueError("legacy risk checkpoint input width does not match open features")
     report = json.loads(report_source.read_text(encoding="utf-8"))
+    preparation_report = json.loads(preparation_source.read_text(encoding="utf-8"))
     if "frozen_policy" not in report or not report.get("score_history_tail"):
         raise ValueError("rerun causal-rate evaluation before freezing the policy")
 
@@ -58,9 +53,17 @@ def main() -> int:
         "status": "research_only_not_trading_ready",
         "open_checkpoint": open_destination.name,
         "risk_checkpoint": risk_destination.name,
-        "open_sha256": sha256(open_destination),
-        "risk_sha256": sha256(risk_destination),
+        "open_sha256": file_sha256(open_destination),
+        "risk_sha256": file_sha256(risk_destination),
         "feature_names": list(expected_features),
+        "preparation": {
+            "primary_vwap": preparation_report["primary_vwap"],
+            "feature_profile": preparation_report.get("feature_profile", "raw"),
+            "amplitude_threshold_ticks": preparation_report["amplitude_threshold_ticks"],
+            "gate_fraction": preparation_report["gate_fraction"],
+            "min_duration_seconds": preparation_report["min_duration_seconds"],
+            "tick_size": 0.01,
+        },
         "frozen_policy": report["frozen_policy"],
         "score_history_tail": report["score_history_tail"],
         "historical_validation": report.get("selected_on_validation"),

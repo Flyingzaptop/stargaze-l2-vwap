@@ -72,6 +72,12 @@ python tools\record_gold_l2_live.py `
 Use `--duration-seconds 60` for a short connection test. Runtime credentials and
 all recorded data remain gitignored.
 
+Inspect an active or completed recording without touching its open buffer:
+
+```powershell
+python tools\audit_gold_l2_recording.py --recording runs\gold_l2_live
+```
+
 Convert the resulting snapshot stream into the same causal one-second contract
 used by the research pipeline:
 
@@ -87,14 +93,32 @@ already-frozen checkpoints/controller:
 ```powershell
 python tools\prepare_gold_l2_open_policy.py `
   --seconds runs\gold_l2_live\l2_seconds.parquet `
-  --out-dir runs\gold_l2_live\prepared --all-test
+  --out-dir runs\gold_l2_live\prepared --all-test `
+  --policy-bundle artifacts\gold_l2_v1
 
 python tools\evaluate_frozen_gold_l2_forward.py `
   --prepared runs\gold_l2_live\prepared\prepared_l2_open_policy.npz `
-  --open-checkpoint artifacts\gold_l2_v1\open_policy.pt `
-  --risk-checkpoint artifacts\gold_l2_v1\risk_direction.pt `
-  --policy-report artifacts\gold_l2_v1\policy.json `
+  --bundle artifacts\gold_l2_v1 `
   --out runs\gold_l2_live\forward_report.json
+```
+
+For parity testing, replay the same policy one causal second at a time (LSTM
+states and rate-controller state are retained exactly as they would be live):
+
+```powershell
+python tools\replay_frozen_gold_l2.py `
+  --prepared runs\gold_l2_live\prepared\prepared_l2_open_policy.npz `
+  --bundle artifacts\gold_l2_v1 `
+  --split all --out runs\gold_l2_live\replay.json
+```
+
+Run paper-only decisions against the active atomic recording (no orders are
+sent):
+
+```powershell
+python tools\paper_gold_l2_live.py `
+  --recording runs\gold_l2_live --bundle artifacts\gold_l2_v1 `
+  --out runs\gold_l2_live\paper_decisions.json
 ```
 
 For a complete reproducible run, use the orchestrator. It fingerprints both

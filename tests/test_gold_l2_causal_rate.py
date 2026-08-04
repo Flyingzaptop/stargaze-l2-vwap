@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from stargaze_ml.gold.l2_causal_rate import (
     CausalRateConfig,
+    CausalRateController,
     causal_rate_select,
     robust_validation_score,
     summarize_selected,
@@ -44,6 +45,22 @@ def test_selector_enforces_daily_cap() -> None:
         fallback_cutoff=0.0, config=CausalRateConfig(target_trades_per_day=10),
     )
     assert len(selected) == 10
+
+
+def test_stateful_controller_matches_batch_selector() -> None:
+    rows = [_row(i, i / 50.0) for i in range(120)]
+    kwargs = dict(
+        mode="classifier",
+        penalty=0.0,
+        filter_field="opportunity_probability",
+        expected_candidates_per_day=100.0,
+        fallback_cutoff=0.5,
+        config=CausalRateConfig(target_trades_per_day=12),
+    )
+    expected = causal_rate_select(rows, **kwargs)
+    controller = CausalRateController(**kwargs)
+    actual = [accepted for row in rows if (accepted := controller.consider(row)) is not None]
+    assert [row["entry_ts_ns"] for row in actual] == [row["entry_ts_ns"] for row in expected]
 
 
 def test_summary_and_robust_score_penalize_tail_loss() -> None:
