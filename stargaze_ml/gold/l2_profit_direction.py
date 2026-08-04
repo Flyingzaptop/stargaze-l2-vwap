@@ -172,12 +172,20 @@ def _trade_predictions(
                 "predicted_short_pnl": predicted_short,
                 "predicted_edge": max(predicted_long, predicted_short),
                 "predicted_advantage": abs(predicted_long - predicted_short),
+                "classifier_predicted_pnl": (
+                    predicted_long if probability >= 0.5 else predicted_short
+                ),
             })
     return rows
 
 
-def _summary(rows: list[dict[str, float]], mode: str, cutoff: float = 0.0) -> dict[str, float]:
-    selected = [row for row in rows if row["side_confidence"] >= cutoff]
+def _summary(
+    rows: list[dict[str, float]],
+    mode: str,
+    cutoff: float = -np.inf,
+    filter_field: str = "side_confidence",
+) -> dict[str, float]:
+    selected = [row for row in rows if row[filter_field] >= cutoff]
     if not selected:
         return {"trades": 0, "mean_pnl_ticks": 0.0, "median_pnl_ticks": 0.0,
                 "win_rate": 0.0, "oracle_win_rate": 0.0}
@@ -316,12 +324,88 @@ def train_profit_direction(
     report={"device":str(device),"best_validation_weighted_auc":best_score,
             "open_threshold":open_threshold,"history":history,"validation_grid":grid,
             "selected_on_validation":selected,"fixed_test":fixed_test,
-            "test_unfiltered_classifier":_summary(test,"classifier",0.0),
-            "test_unfiltered_value":_summary(test,"value",0.0)}
+            "test_unfiltered_classifier":_summary(test,"classifier"),
+            "test_unfiltered_value":_summary(test,"value")}
     out=Path(output_dir).resolve(); out.mkdir(parents=True,exist_ok=True)
     torch.save({"model_state":model.state_dict(),"config":asdict(config),
                 "market_config":asdict(market_config),"feature_names":data.feature_names,
                 "normalizer":normalizer.to_dict(),"open_threshold":open_threshold,
                 "evaluation":report},out/"final.pt")
     (out/"report.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
+    return report
+
+
+def evaluate_profit_direction_checkpoint(
+    prepared_path: str | Path,
+    open_checkpoint_path: str | Path,
+    direction_checkpoint_path: str | Path,
+    output_path: str | Path,
+    *,
+    device_name: str = "auto",
+) -> dict[str, object]:
+    device = torch.device(
+        "cuda" if device_name == "auto" and torch.cuda.is_available()
+        else device_name if device_name != "auto" else "cpu"
+    )
+    data = PreparedOpenData(prepared_path)
+    open_checkpoint = torch.load(
+        Path(open_checkpoint_path).resolve(strict=True), map_location=device, weights_only=False
+    )
+    direction_checkpoint = torch.load(
+        Path(direction_checkpoint_path).resolve(strict=True), map_location=device, weights_only=False
+    )
+    market_config = OpenReinforceConfig(**open_checkpoint["config"])
+    config = ProfitDirectionConfig(**direction_checkpoint["config"])
+    normalizer = RobustNormalizer.from_dict(direction_checkpoint["normalizer"])
+    teacher = L2OpenPolicy(len(data.feature_names), market_config.hidden_size).to(device)
+    teacher.load_state_dict(open_checkpoint["model_state"]); teacher.eval()
+    model = L2ProfitDirectionPolicy(len(data.feature_names), market_config.hidden_size).to(device)
+    model.load_state_dict(direction_checkpoint["model_state"]); model.eval()
+    open_threshold = float(direction_checkpoint["open_threshold"])
+    split_rows: dict[str, list[dict[str, float]]] = {}
+    for split, left, right in (
+        ("validation", data.train_end, data.validation_end),
+        ("test", data.validation_end, len(data.x)),
+    ):
+        split_rows[split] = _trade_predictions(
+            model, teacher, data, normalizer,
+            _event_indices(data, left, right, good_only=False),
+            open_threshold, device, market_config, config,
+        )
+    validation = split_rows["validation"]; test = split_rows["test"]
+    fields = (
+        "side_confidence", "predicted_edge", "predicted_advantage",
+        "classifier_predicted_pnl",
+    )
+    grid: list[dict[str, object]] = []
+    for mode in ("classifier", "value"):
+        for field in fields:
+            values = np.asarray([row[field] for row in validation])
+            cutoffs = sorted(set([-np.inf] + [
+                float(np.quantile(values, quantile))
+                for quantile in (0.50, 0.75, 0.90, 0.95)
+            ]))
+            for cutoff in cutoffs:
+                grid.append({
+                    "mode": mode, "filter_field": field, "cutoff": cutoff,
+                    **_summary(validation, mode, cutoff, field),
+                })
+    eligible = [row for row in grid if int(row["trades"]) >= 60]
+    selected = max(eligible or grid, key=lambda row: float(row["mean_pnl_ticks"]))
+    fixed_test = {
+        "mode": selected["mode"], "filter_field": selected["filter_field"],
+        "cutoff": selected["cutoff"],
+        **_summary(
+            test, str(selected["mode"]), float(selected["cutoff"]),
+            str(selected["filter_field"]),
+        ),
+    }
+    report = {
+        "validation_grid": grid,
+        "selected_on_validation": selected,
+        "fixed_test": fixed_test,
+        "validation_trades": len(validation), "test_trades": len(test),
+    }
+    path = Path(output_path).resolve(); path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
