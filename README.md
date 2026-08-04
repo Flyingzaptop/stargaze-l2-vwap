@@ -2,14 +2,14 @@
 
 Research code for reconstructing second-level BBO/L2 state, building causal
 multi-horizon quote-VWAP features, detecting VWAP excursions, and training
-separate entry and direction policies. The repository also contains the
+separate entry and risk-aware direction policies. The repository also contains the
 multi-exchange market recorder and older BTC/XAUUSD experiments used to build
 the current pipeline.
 
 This is research software, not a profitable trading system. Current holdout
 results show that entry opportunity detection is materially easier than side
-selection; transaction costs and heavy-tail direction errors still make the
-strategy untradeable.
+selection. The best fixed holdout result is near break-even after modeled costs,
+but heavy-tail direction errors still prevent calling the strategy tradable.
 
 ## Current L2/VWAP pipeline
 
@@ -22,7 +22,7 @@ raw cTrader demo L2
   -> excursions between price/primary-VWAP crossings
   -> amplitude gate
   -> LSTM entry policy
-  -> separate magnitude-aware direction policy
+  -> separate magnitude- and tail-risk-aware direction policy
   -> next-BBO execution, spread, commission and slippage
   -> chronological validation/test report
 ```
@@ -75,7 +75,19 @@ python tools\train_gold_l2_profit_direction.py `
   --open-checkpoint runs\gold_l2_multihorizon\primary_60\open_oracle\final.pt `
   --out-dir runs\gold_l2_multihorizon\primary_60\profit_direction `
   --epochs 15 --device auto
+
+python tools\train_gold_l2_risk_direction.py `
+  --prepared runs\gold_l2_multihorizon\primary_60\prepared_l2_open_policy.npz `
+  --open-checkpoint runs\gold_l2_multihorizon\primary_60\open_oracle\final.pt `
+  --out-dir runs\gold_l2_multihorizon\primary_60\risk_direction `
+  --epochs 15 --tail-threshold-ticks 500 --tail-weight 1.0 `
+  --seed 20260810 --device auto
 ```
+
+The current best validation-selected risk policy produced 474 fixed holdout
+trades: +93 ticks total, +0.20 ticks/trade, 59.3% wins, and -657 ticks at the
+5th percentile. This is an experimental near-break-even result, not evidence
+of deployable edge. Raw datasets, checkpoints, and reports remain gitignored.
 
 ### Tests
 
@@ -90,6 +102,7 @@ Key implementation files:
   lead/lag fields and excursion segmentation.
 - `stargaze_ml/gold/l2_open_reinforce.py` — entry-only REINFORCE policy.
 - `stargaze_ml/gold/l2_profit_direction.py` — magnitude-aware side/value model.
+- `stargaze_ml/gold/l2_risk_direction.py` — value, opportunity and tail-risk heads.
 - `tests/test_gold_l2_*.py` — causal and execution-contract regression tests.
 
 ## Market data collector
