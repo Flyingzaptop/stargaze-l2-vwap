@@ -8,13 +8,14 @@ the current pipeline.
 
 This is research software, not a profitable trading system. Current holdout
 results show that entry opportunity detection is materially easier than side
-selection. The best fixed holdout result is near break-even after modeled costs,
-but heavy-tail direction errors still prevent calling the strategy tradable.
+selection. The four-seed ensemble produced +44.23 ticks/trade over 40 exploratory
+test trades, but its standard error was +45.37 ticks. Heavy-tail direction errors
+and the small sample prevent calling the strategy tradable.
 
-The reproducible frozen research policy is included in `artifacts/gold_l2_v1`:
-two small checkpoints plus the exact causal-rate state used for untouched
-forward evaluation. Raw/prepared L2 is excluded because it is roughly 434 MB and
-must be collected or supplied separately.
+The preferred reproducible policy is in `artifacts/gold_l2_v2_ensemble`: one
+open model, four direction seeds, and the exact causal-rate state used for
+untouched forward evaluation. `gold_l2_v1` preserves the earlier single-seed
+bundle. Raw/prepared L2 is excluded because it is roughly 434 MB.
 
 ## Current L2/VWAP pipeline
 
@@ -33,8 +34,9 @@ raw cTrader demo L2
 ```
 
 All rolling fields are causal. A decision at second `t` executes using the
-first observed BBO of `t+1`. Dataset splits are chronological. Validation
-selects thresholds/checkpoints; test is read once with those fixed settings.
+observed BBO of `t+1`; VWAP-crossing exits require the same exact BBO contract.
+Dataset splits are chronological. The historical test has been inspected across
+variants and is exploratory; the included policy is frozen for newer forward data.
 
 ### Installation
 
@@ -94,11 +96,11 @@ already-frozen checkpoints/controller:
 python tools\prepare_gold_l2_open_policy.py `
   --seconds runs\gold_l2_live\l2_seconds.parquet `
   --out-dir runs\gold_l2_live\prepared --all-test `
-  --policy-bundle artifacts\gold_l2_v1
+  --policy-bundle artifacts\gold_l2_v2_ensemble
 
 python tools\evaluate_frozen_gold_l2_forward.py `
   --prepared runs\gold_l2_live\prepared\prepared_l2_open_policy.npz `
-  --bundle artifacts\gold_l2_v1 `
+  --bundle artifacts\gold_l2_v2_ensemble `
   --out runs\gold_l2_live\forward_report.json
 ```
 
@@ -108,7 +110,7 @@ states and rate-controller state are retained exactly as they would be live):
 ```powershell
 python tools\replay_frozen_gold_l2.py `
   --prepared runs\gold_l2_live\prepared\prepared_l2_open_policy.npz `
-  --bundle artifacts\gold_l2_v1 `
+  --bundle artifacts\gold_l2_v2_ensemble `
   --split all --out runs\gold_l2_live\replay.json
 ```
 
@@ -117,7 +119,7 @@ sent):
 
 ```powershell
 python tools\paper_gold_l2_live.py `
-  --recording runs\gold_l2_live --bundle artifacts\gold_l2_v1 `
+  --recording runs\gold_l2_live --bundle artifacts\gold_l2_v2_ensemble `
   --out runs\gold_l2_live\paper_decisions.json
 ```
 

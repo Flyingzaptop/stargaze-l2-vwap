@@ -22,6 +22,7 @@ recorder.log
 runs/
 *.pt
 !artifacts/gold_l2_v1/*.pt
+!artifacts/gold_l2_v2_ensemble/*.pt
 *.npz
 *.cbm
 *.db

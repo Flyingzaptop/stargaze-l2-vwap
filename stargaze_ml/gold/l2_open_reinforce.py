@@ -56,10 +56,44 @@ class PreparedOpenData:
         validate_prepared_open_data(self)
 
 
-def _event_indices(data: PreparedOpenData, left: int, right: int, *, good_only: bool) -> np.ndarray:
+def _event_indices(
+    data: PreparedOpenData,
+    left: int,
+    right: int,
+    *,
+    good_only: bool,
+    exit_crossing: int | str = 1,
+) -> np.ndarray:
+    if exit_crossing not in {1, 2, "both"}:
+        raise ValueError("exit_crossing must be 1, 2, or 'both'")
+    crossing_1_execution = data.event_crossing_1 + 1
+    crossing_2_execution = data.event_crossing_2 + 1
+    if exit_crossing == 1:
+        executable = crossing_1_execution < len(data.observed)
+    elif exit_crossing == 2:
+        executable = crossing_2_execution < len(data.observed)
+    else:
+        executable = (
+            (crossing_1_execution < len(data.observed))
+            & (crossing_2_execution < len(data.observed))
+        )
+    observed_exits = np.zeros(len(data.event_start), dtype=bool)
+    if exit_crossing == 1:
+        observed_exits[executable] = data.observed[crossing_1_execution[executable]]
+        inside_split = crossing_1_execution < right
+    elif exit_crossing == 2:
+        observed_exits[executable] = data.observed[crossing_2_execution[executable]]
+        inside_split = crossing_2_execution < right
+    else:
+        observed_exits[executable] = (
+            data.observed[crossing_1_execution[executable]]
+            & data.observed[crossing_2_execution[executable]]
+        )
+        inside_split = crossing_2_execution < right
     mask = (
-        (data.event_start >= left) & (data.event_crossing_2 + 1 < right)
+        (data.event_start >= left) & inside_split
         & data.event_gated & (data.event_gate_index >= data.event_start)
+        & observed_exits
     )
     if good_only:
         mask &= data.event_good
@@ -160,7 +194,7 @@ def train_open_policy(
     history=[]
     for epoch in range(config.epochs):
         good_only=epoch<config.warmup_epochs
-        events=_event_indices(data,0,data.train_end,good_only=good_only)
+        events=_event_indices(data,0,data.train_end,good_only=good_only,exit_crossing="both")
         rng.shuffle(events)
         entropy_coef=schedule(config.entropy_start,config.entropy_peak,config.entropy_end,epoch,config.warmup_epochs,config.epochs)
         temperature=schedule(config.temperature_start,config.temperature_peak,config.temperature_end,epoch,config.warmup_epochs,config.epochs)
@@ -200,9 +234,9 @@ def train_open_policy(
         row={"epoch":epoch+1,"good_only":good_only,"events":len(events),"opens":opens,
              "mean_reward_ticks":float(np.mean(rewards)),"entropy":entropy_coef,"temperature":temperature,"floor":floor}
         history.append(row); print(json.dumps(row),flush=True)
-    val_events=_event_indices(data,data.train_end,data.validation_end,good_only=False)
+    val_events=_event_indices(data,data.train_end,data.validation_end,good_only=False,exit_crossing="both")
     evaluation=evaluate_thresholds(model,data,val_events,normalizer,device,config)
-    test_events=_event_indices(data,data.validation_end,len(data.x),good_only=False)
+    test_events=_event_indices(data,data.validation_end,len(data.x),good_only=False,exit_crossing="both")
     test_grid=evaluate_thresholds(model,data,test_events,normalizer,device,config)
     selected=float(evaluation["best"]["threshold"])
     fixed_test=min(test_grid["grid"],key=lambda row:abs(float(row["threshold"])-selected))

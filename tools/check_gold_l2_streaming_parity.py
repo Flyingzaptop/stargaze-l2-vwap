@@ -16,6 +16,7 @@ from stargaze_ml.gold.l2_risk_direction import (
     RiskDirectionConfig,
     _trade_rows,
 )
+from stargaze_ml.gold.l2_risk_ensemble import ensemble_trade_rows
 from stargaze_ml.training.data import RobustNormalizer
 
 
@@ -43,26 +44,32 @@ def main() -> int:
     data = PreparedOpenData(args.prepared)
     bundle = load_frozen_policy_bundle(args.bundle)
     open_state = torch.load(bundle.open_checkpoint, map_location=device, weights_only=False)
-    risk_state = torch.load(bundle.risk_checkpoint, map_location=device, weights_only=False)
+    risk_states = [
+        torch.load(path, map_location=device, weights_only=False)
+        for path in bundle.risk_checkpoints
+    ]
+    risk_state = risk_states[0]
     market = OpenReinforceConfig(**risk_state["market_config"])
-    risk_config = RiskDirectionConfig(**risk_state["config"])
+    risk_configs = [RiskDirectionConfig(**state["config"]) for state in risk_states]
     normalizer = RobustNormalizer.from_dict(risk_state["normalizer"])
     teacher = L2OpenPolicy(len(data.feature_names), market.hidden_size).to(device)
     teacher.load_state_dict(open_state["model_state"])
-    risk = L2RiskDirectionPolicy(len(data.feature_names), market.hidden_size).to(device)
-    risk.load_state_dict(risk_state["model_state"])
+    risk_models = []
+    for state in risk_states:
+        risk = L2RiskDirectionPolicy(len(data.feature_names), market.hidden_size).to(device)
+        risk.load_state_dict(state["model_state"])
+        risk_models.append(risk)
     events = _event_indices(data, data.validation_end, len(data.x), good_only=False)[: args.events]
-    offline = _trade_rows(
-        risk,
-        teacher,
-        data,
-        normalizer,
-        events,
-        float(risk_state["open_threshold"]),
-        device,
-        market,
-        risk_config,
-    )
+    if len(risk_models) == 1:
+        offline = _trade_rows(
+            risk_models[0], teacher, data, normalizer, events,
+            float(risk_state["open_threshold"]), device, market, risk_configs[0],
+        )
+    else:
+        offline = ensemble_trade_rows(
+            risk_models, teacher, data, normalizer, events,
+            float(risk_state["open_threshold"]), device, market, risk_configs,
+        )
     runtime = FrozenL2PolicyRuntime(args.bundle, device_name=str(device))
     streaming = []
     for event in events:
@@ -87,6 +94,7 @@ def main() -> int:
     report = {
         "events_checked": int(len(events)),
         "candidates": len(offline),
+        "risk_models": len(risk_models),
         "entry_mismatches": entry_mismatches,
         "max_absolute_difference": maxima,
     }

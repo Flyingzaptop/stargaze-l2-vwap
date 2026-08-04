@@ -115,12 +115,35 @@ def main() -> None:
         config=CausalRateConfig(target_trades_per_day=int(selected["target_trades_per_day"])),
         initial_scores=initial_scores,
     )
+    all_scores = initial_scores + [
+        direction_and_score(
+            row,
+            mode=str(selected["mode"]),
+            penalty=float(selected["penalty"]),
+            filter_field=str(selected["filter_field"]),
+        )[1]
+        for row in test_rows
+    ]
+    fixed_config = CausalRateConfig(
+        target_trades_per_day=int(selected["target_trades_per_day"])
+    )
     report = {
         "device": str(device), "checkpoint_count": len(states),
         "expected_candidates_per_day": expected,
         "selected_on_validation": selected,
         "validation_best_by_filter": best_by_filter,
         "fixed_test": summarize_selected(test_chosen),
+        "score_history_tail": all_scores[-fixed_config.history_size :],
+        "frozen_policy": {
+            "mode": str(selected["mode"]),
+            "penalty": float(selected["penalty"]),
+            "filter_field": str(selected["filter_field"]),
+            "fallback_cutoff": float(selected["fallback_cutoff"]),
+            "expected_candidates_per_day": expected,
+            "target_trades_per_day": int(selected["target_trades_per_day"]),
+            "history_size": fixed_config.history_size,
+            "min_history": fixed_config.min_history,
+        },
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2), encoding="utf-8")

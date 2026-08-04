@@ -20,9 +20,9 @@ def _bundle(tmp_path: Path) -> Path:
     (tmp_path / "risk.pt").write_bytes(risk_bytes)
     policy = {
         "open_checkpoint": "open.pt",
-        "risk_checkpoint": "risk.pt",
+        "risk_checkpoints": ["risk.pt"],
         "open_sha256": _hash(open_bytes),
-        "risk_sha256": _hash(risk_bytes),
+        "risk_sha256s": [_hash(risk_bytes)],
         "feature_names": ["x"],
         "preparation": {
             "primary_vwap": "60",

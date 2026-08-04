@@ -204,8 +204,8 @@ def run_multivwap_side_experiment(
     seconds = pl.read_parquet(Path(seconds_path).resolve(strict=True))
     mid_vwaps = build_mid_vwaps(seconds)
     split_events = {
-        "validation": _event_indices(data, data.train_end, data.validation_end, good_only=False),
-        "test": _event_indices(data, data.validation_end, len(data.x), good_only=False),
+        "validation": _event_indices(data, data.train_end, data.validation_end, good_only=False, exit_crossing="both"),
+        "test": _event_indices(data, data.validation_end, len(data.x), good_only=False, exit_crossing="both"),
     }
     split_entries = {
         name: _open_entries(model, data, normalizer, events, threshold, device)

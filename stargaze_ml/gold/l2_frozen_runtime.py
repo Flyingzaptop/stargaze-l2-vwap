@@ -75,30 +75,35 @@ class FrozenL2PolicyRuntime:
         open_state = torch.load(
             self.bundle.open_checkpoint, map_location=self.device, weights_only=False
         )
-        risk_state = torch.load(
-            self.bundle.risk_checkpoint, map_location=self.device, weights_only=False
-        )
+        risk_states = [
+            torch.load(path, map_location=self.device, weights_only=False)
+            for path in self.bundle.risk_checkpoints
+        ]
         expected_names = tuple(str(name) for name in self.bundle.policy["feature_names"])
         assert_feature_names(
             tuple(open_state["feature_names"]), expected_names, artifact="open checkpoint"
         )
-        if "feature_names" in risk_state:
-            assert_feature_names(
-                tuple(risk_state["feature_names"]), expected_names, artifact="risk checkpoint"
-            )
+        for risk_state in risk_states:
+            if "feature_names" in risk_state:
+                assert_feature_names(
+                    tuple(risk_state["feature_names"]), expected_names, artifact="risk checkpoint"
+                )
         self.feature_names = expected_names
-        self.market = OpenReinforceConfig(**risk_state["market_config"])
-        self.risk_config = RiskDirectionConfig(**risk_state["config"])
-        self.normalizer = RobustNormalizer.from_dict(risk_state["normalizer"])
+        self.market = OpenReinforceConfig(**risk_states[0]["market_config"])
+        self.risk_configs = [RiskDirectionConfig(**state["config"]) for state in risk_states]
+        self.normalizer = RobustNormalizer.from_dict(risk_states[0]["normalizer"])
         self.open_model = L2OpenPolicy(len(expected_names), self.market.hidden_size).to(self.device)
         self.open_model.load_state_dict(open_state["model_state"])
         self.open_model.eval()
-        self.risk_model = L2RiskDirectionPolicy(len(expected_names), self.market.hidden_size).to(
-            self.device
-        )
-        self.risk_model.load_state_dict(risk_state["model_state"])
-        self.risk_model.eval()
-        self.open_threshold = float(risk_state["open_threshold"])
+        self.risk_models = []
+        for state in risk_states:
+            model = L2RiskDirectionPolicy(len(expected_names), self.market.hidden_size).to(self.device)
+            model.load_state_dict(state["model_state"])
+            model.eval()
+            self.risk_models.append(model)
+        self.open_threshold = float(risk_states[0]["open_threshold"])
+        if any(float(state["open_threshold"]) != self.open_threshold for state in risk_states[1:]):
+            raise ValueError("risk ensemble has inconsistent open thresholds")
         policy = self.bundle.policy["frozen_policy"]
         self.controller = CausalRateController(
             mode=str(policy["mode"]),
@@ -116,13 +121,15 @@ class FrozenL2PolicyRuntime:
         self._event_id: int | None = None
         self._candidate_considered = False
         self._open_state: tuple[torch.Tensor, torch.Tensor] | None = None
-        self._risk_state: tuple[torch.Tensor, torch.Tensor] | None = None
+        self._risk_states: list[tuple[torch.Tensor, torch.Tensor] | None] = [
+            None for _ in self.risk_models
+        ]
 
     def reset_event(self, event_id: int) -> None:
         self._event_id = int(event_id)
         self._candidate_considered = False
         self._open_state = None
-        self._risk_state = None
+        self._risk_states = [None for _ in self.risk_models]
 
     def _step_models(self, row: np.ndarray) -> tuple[float, tuple[float, ...]]:
         normalized = self.normalizer.transform(np.asarray(row, dtype=np.float32)[None])
@@ -130,20 +137,35 @@ class FrozenL2PolicyRuntime:
         with torch.no_grad():
             open_encoded, self._open_state = self.open_model.lstm(tensor, self._open_state)
             open_logit = self.open_model.open_head(open_encoded).squeeze()
-            risk_encoded, self._risk_state = self.risk_model.lstm(tensor, self._risk_state)
-            risk_values = tuple(
-                head(risk_encoded).squeeze()
-                for head in (
-                    self.risk_model.side_head,
-                    self.risk_model.long_value_head,
-                    self.risk_model.short_value_head,
-                    self.risk_model.long_tail_head,
-                    self.risk_model.short_tail_head,
-                    self.risk_model.opportunity_head,
+            predictions = []
+            for model_index, (model, config) in enumerate(
+                zip(self.risk_models, self.risk_configs, strict=True)
+            ):
+                encoded, state = model.lstm(tensor, self._risk_states[model_index])
+                self._risk_states[model_index] = state
+                raw = tuple(
+                    head(encoded).squeeze()
+                    for head in (
+                        model.side_head,
+                        model.long_value_head,
+                        model.short_value_head,
+                        model.long_tail_head,
+                        model.short_tail_head,
+                        model.opportunity_head,
+                    )
                 )
-            )
+                predictions.append(
+                    (
+                        float(torch.sigmoid(raw[0]).cpu()),
+                        float(np.sinh(float(raw[1].cpu())) * config.pnl_scale_ticks),
+                        float(np.sinh(float(raw[2].cpu())) * config.pnl_scale_ticks),
+                        float(torch.sigmoid(raw[3]).cpu()),
+                        float(torch.sigmoid(raw[4]).cpu()),
+                        float(torch.sigmoid(raw[5]).cpu()),
+                    )
+                )
         probability = float(torch.sigmoid(open_logit).cpu())
-        return probability, tuple(float(value.cpu()) for value in risk_values)
+        return probability, tuple(np.mean(np.asarray(predictions), axis=0).tolist())
 
     def process_index(
         self,
@@ -170,18 +192,18 @@ class FrozenL2PolicyRuntime:
         if not allowed or open_probability < self.open_threshold:
             return None
         self._candidate_considered = True
-        side_logit, long_value, short_value, long_tail_logit, short_tail_logit, opportunity_logit = risk
+        side_probability, predicted_long, predicted_short, long_tail, short_tail, opportunity = risk
         row: dict[str, float | int | bool] = {
             "event_id": event_id,
             "entry_index": index,
             "entry_ts_ns": int(data.ts_ns[index]),
             "open_probability": open_probability,
-            "side_probability": float(torch.sigmoid(torch.tensor(side_logit))),
-            "predicted_long_pnl": float(np.sinh(long_value) * self.risk_config.pnl_scale_ticks),
-            "predicted_short_pnl": float(np.sinh(short_value) * self.risk_config.pnl_scale_ticks),
-            "long_tail_probability": float(torch.sigmoid(torch.tensor(long_tail_logit))),
-            "short_tail_probability": float(torch.sigmoid(torch.tensor(short_tail_logit))),
-            "opportunity_probability": float(torch.sigmoid(torch.tensor(opportunity_logit))),
+            "side_probability": side_probability,
+            "predicted_long_pnl": predicted_long,
+            "predicted_short_pnl": predicted_short,
+            "long_tail_probability": long_tail,
+            "short_tail_probability": short_tail,
+            "opportunity_probability": opportunity,
             "next_bbo_observed": next_observed,
         }
         accepted = self.controller.consider(row)

@@ -29,33 +29,38 @@ in configured price ticks after modeled costs.
 
 | Direction policy | Validation-selected daily cap | Validation mean | Fixed test trades | Fixed test mean | Test win rate | Test p05 |
 |---|---:|---:|---:|---:|---:|---:|
-| Tail threshold 150 | 10 | +14.47 | 40 | -251.10 | 50.0% | -774.4 |
-| Tail threshold 300 | 10 | +10.34 | 42 | -57.67 | 59.5% | -596.2 |
-| Tail threshold 500 | 25 | +42.59 | 100 | +28.07 | 67.0% | -468.5 |
+| Tail threshold 150 | 10 | -6.19 | 40 | -160.58 | 60.0% | -357.0 |
+| Tail threshold 300 | 10 | -0.08 | 42 | -55.90 | 59.5% | -598.3 |
+| Tail threshold 500 | 25 | +43.50 | 100 | +27.28 | 64.0% | -462.7 |
 
-The tail-500 run is the first near-positive fixed-test result: +2,807 ticks
-total over 100 trades. Its mean standard error is about 32 ticks, larger than
-the +28-tick mean, so this is not statistically established edge.
+The tail-500 seed-10 run produced +2,728 ticks over 100 fixed-test trades. Its
+mean standard error is about 30 ticks versus a +27-tick mean, so it is not
+statistically established.
 
 ### Seed and model robustness
 
 | Model | Validation-selected cap | Fixed test trades | Fixed test mean | Win rate |
 |---|---:|---:|---:|---:|
-| Tail-500 seed 10 | 25/day | 100 | +28.07 | 67.0% |
-| Tail-500 seed 11 | 10/day | 40 | +24.10 | 75.0% |
-| Tail-500 seed 12 | 20/day | 88 | -22.35 | 60.2% |
-| Tail-500 seed 13 | 10/day | 40 | -27.28 | 67.5% |
-| Four-seed ensemble | 10/day | 40 | -18.85 | 62.5% |
+| Tail-500 seed 10 | 25/day | 100 | +27.28 | 64.0% |
+| Tail-500 seed 11 | 10/day | 40 | +80.68 | 75.0% |
+| Tail-500 seed 12 | 15/day | 65 | -18.77 | 58.5% |
+| Tail-500 seed 13 | 10/day | 40 | +35.43 | 70.0% |
+| Four-seed ensemble | 10/day | 40 | +44.23 | 72.5% |
 | Snapshot gradient boosting | 10/day | 29 | -94.41 | 65.5% |
 
-The sign is seed-dependent despite similar validation AUC. High win rates and
-positive medians coexist with negative means because a few wrong-side trades
-dominate total PnL.
+Three of four seeds and the validation-selected ensemble are now positive, but
+seed 12 remains negative. The ensemble mean (+44.23) is approximately equal to
+its standard error (+45.37), so rare wrong-side tails still prevent an edge
+claim.
+
+These figures enforce an observed BBO for entry and the configured first
+VWAP-crossing exit. Earlier reports sometimes used a carried quote when the
+exact exit second had no update; those non-executable events are now excluded.
 
 ### Dominance diagnosis
 
-In the positive seed-10 test, five losses below -500 ticks contributed -4,933
-ticks while the other 95 trades contributed +7,740. All five were incorrect
+In the corrected seed-10 test, four losses below -500 ticks contributed -3,638
+ticks while the other 96 trades contributed +6,366. All four were incorrect
 longs. At entry, price was below most VWAP horizons while 5-120 second VWAP
 slopes were already following price downward: a clear PRICE-dominance pattern.
 
@@ -69,8 +74,8 @@ Several causal implementations were tested without test-based authorization:
   selected no veto; the fixed strategy therefore kept the original side.
 - An interpretable 93-field hierarchy model combined scale consensus, ribbon
   ordering, gap expansion and lagged VWAP/price velocity. Validation selected
-  43 trades at +103.49 ticks/trade, but fixed test lost -70.91 ticks/trade and
-  made no high-confidence swaps.
+  48 trades at +90.10 ticks/trade, but fixed test lost -182.49 ticks/trade and
+  swapped only 2.0% of selected entries.
 
 The physical hypothesis remains plausible, but the current dataset cannot
 calibrate a safe dominance override. More untouched days are required.
@@ -96,7 +101,8 @@ therefore an exploratory holdout, not a pristine final test. Before deployment,
 freeze the pipeline and evaluate once on newer untouched L2 days, then run a
 forward paper-trading period with the same execution contract.
 
-The frozen seed-10 research bundle is in `artifacts/gold_l2_v1`. It contains the
-open model, risk-direction model, exact rolling-score history, and controller
-settings. The live recorder writes immutable depth and rebuilt BBO parts, so a
-new sample can be evaluated without refitting.
+The preferred frozen four-seed bundle is in `artifacts/gold_l2_v2_ensemble`;
+`gold_l2_v1` preserves seed 10. Each bundle contains the open model, exact
+rolling-score history, controller settings, hashes, and preparation contract.
+The live recorder writes immutable depth and rebuilt BBO parts, so a new sample
+can be evaluated without refitting.

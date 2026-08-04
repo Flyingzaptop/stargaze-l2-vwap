@@ -10,6 +10,7 @@ from stargaze_ml.gold.l2_open_policy import L2OpenPolicy, exploration_probabilit
 from stargaze_ml.gold.l2_open_reinforce import (
     OpenReinforceConfig,
     PreparedOpenData,
+    _event_indices,
     _first_valid_threshold_entry,
     _pnl_ticks,
     schedule,
@@ -77,3 +78,24 @@ def test_threshold_entry_skips_missing_next_second_execution() -> None:
 def test_open_feature_profile_rejects_unknown_value() -> None:
     with pytest.raises(ValueError, match="feature_profile"):
         build_open_policy_data(pl.DataFrame(), feature_profile="future")
+
+
+def test_event_indices_require_observed_exit_execution() -> None:
+    data = object.__new__(PreparedOpenData)
+    data.event_start = np.asarray([1, 10])
+    data.event_crossing_1 = np.asarray([4, 13])
+    data.event_crossing_2 = np.asarray([7, 16])
+    data.event_gated = np.asarray([True, True])
+    data.event_gate_index = np.asarray([2, 11])
+    data.event_good = np.asarray([True, True])
+    data.observed = np.ones(20, dtype=bool)
+    data.observed[14] = False
+    np.testing.assert_array_equal(
+        _event_indices(data, 0, 20, good_only=False),
+        [0],
+    )
+    data.observed[8] = False
+    np.testing.assert_array_equal(
+        _event_indices(data, 0, 20, good_only=False, exit_crossing="both"),
+        [],
+    )

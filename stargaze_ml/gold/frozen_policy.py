@@ -21,7 +21,7 @@ def file_sha256(path: Path) -> str:
 class FrozenPolicyBundle:
     directory: Path
     open_checkpoint: Path
-    risk_checkpoint: Path
+    risk_checkpoints: tuple[Path, ...]
     policy_path: Path
     policy: dict[str, Any]
 
@@ -34,9 +34,7 @@ def load_frozen_policy_bundle(directory: Path) -> FrozenPolicyBundle:
     policy = json.loads(policy_path.read_text(encoding="utf-8"))
     required = {
         "open_checkpoint",
-        "risk_checkpoint",
         "open_sha256",
-        "risk_sha256",
         "feature_names",
         "preparation",
         "frozen_policy",
@@ -53,11 +51,23 @@ def load_frozen_policy_bundle(directory: Path) -> FrozenPolicyBundle:
         return candidate
 
     open_checkpoint = inside(str(policy["open_checkpoint"]))
-    risk_checkpoint = inside(str(policy["risk_checkpoint"]))
+    risk_names = policy.get("risk_checkpoints")
+    risk_hashes = policy.get("risk_sha256s")
+    if risk_names is None:
+        if "risk_checkpoint" not in policy or "risk_sha256" not in policy:
+            raise ValueError("frozen policy has no risk checkpoint contract")
+        risk_names = [policy["risk_checkpoint"]]
+        risk_hashes = [policy["risk_sha256"]]
+    if not isinstance(risk_names, list) or not isinstance(risk_hashes, list):
+        raise ValueError("risk checkpoint names and hashes must be lists")
+    if not risk_names or len(risk_names) != len(risk_hashes):
+        raise ValueError("risk checkpoint names/hashes are empty or misaligned")
+    risk_checkpoints = tuple(inside(str(name)) for name in risk_names)
     if file_sha256(open_checkpoint) != str(policy["open_sha256"]):
         raise ValueError("open checkpoint hash mismatch")
-    if file_sha256(risk_checkpoint) != str(policy["risk_sha256"]):
-        raise ValueError("risk checkpoint hash mismatch")
+    for path, expected_hash in zip(risk_checkpoints, risk_hashes, strict=True):
+        if file_sha256(path) != str(expected_hash):
+            raise ValueError(f"risk checkpoint hash mismatch: {path.name}")
     names = tuple(str(value) for value in policy["feature_names"])
     if not names or len(set(names)) != len(names):
         raise ValueError("frozen feature names must be non-empty and unique")
@@ -94,4 +104,4 @@ def load_frozen_policy_bundle(directory: Path) -> FrozenPolicyBundle:
     preparation_missing = sorted(preparation_required - set(preparation))
     if preparation_missing:
         raise ValueError(f"frozen preparation is missing fields: {', '.join(preparation_missing)}")
-    return FrozenPolicyBundle(root, open_checkpoint, risk_checkpoint, policy_path, policy)
+    return FrozenPolicyBundle(root, open_checkpoint, risk_checkpoints, policy_path, policy)
