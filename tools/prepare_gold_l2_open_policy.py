@@ -18,6 +18,7 @@ def main() -> None:
     parser.add_argument("--amplitude-ticks", type=float, default=230.0)
     parser.add_argument("--gate-fraction", type=float, default=0.75)
     parser.add_argument("--primary-vwap", default="60")
+    parser.add_argument("--feature-profile", choices=("raw", "hierarchy", "leadlag"), default="raw")
     parser.add_argument("--match-train-good-events", type=int)
     args = parser.parse_args()
     out = args.out_dir.resolve(); out.mkdir(parents=True, exist_ok=True)
@@ -32,6 +33,7 @@ def main() -> None:
         pilot = build_open_policy_data(
             seconds, amplitude_threshold_ticks=1.0,
             gate_fraction=args.gate_fraction, primary_vwap=primary_vwap,
+            feature_profile=args.feature_profile,
         )
         pilot_events = (
             (pilot.excursions.crossing_2 + 1 < train_end)
@@ -45,6 +47,7 @@ def main() -> None:
     data = build_open_policy_data(
         seconds, amplitude_threshold_ticks=amplitude_ticks,
         gate_fraction=args.gate_fraction, primary_vwap=primary_vwap,
+        feature_profile=args.feature_profile,
     )
     e = data.excursions
     np.savez_compressed(
@@ -65,6 +68,7 @@ def main() -> None:
     manifest = {
         "rows": len(data.x), "features": list(data.feature_names),
         "primary_vwap": str(primary_vwap),
+        "feature_profile": args.feature_profile,
         "direction": "handled by a separate direction model",
         "amplitude_threshold_ticks": amplitude_ticks,
         "gate_fraction": args.gate_fraction,

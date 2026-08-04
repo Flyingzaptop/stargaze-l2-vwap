@@ -52,6 +52,17 @@ Copy-Item secrets.gold.example.json secrets.gold.runtime.json
 
 The input Parquet/NPZ files are intentionally not stored in Git.
 
+For a complete reproducible run, use the orchestrator. It fingerprints both
+inputs and writes a step-by-step `pipeline_manifest.json`:
+
+```powershell
+python tools\run_gold_l2_end_to_end.py `
+  --seconds runs\gold_l2_policy_v2\l2_seconds.parquet `
+  --base runs\gold_l2_policy_v2\prepared_l2_policy.npz `
+  --out-dir runs\gold_l2_e2e `
+  --primary-vwap 60 --feature-profile raw --device auto
+```
+
 ```powershell
 $env:PYTHONPATH='.'
 python tools\prepare_gold_l2_open_policy.py `

@@ -96,6 +96,7 @@ def build_open_policy_data(
     min_duration_seconds: int = 30,
     horizons: tuple[int, ...] = VWAP_HORIZONS_SECONDS,
     primary_vwap: int | str = 60,
+    feature_profile: str = "leadlag",
 ) -> OpenPolicyData:
     """Build causal inputs and completed excursion metadata.
 
@@ -105,6 +106,8 @@ def build_open_policy_data(
     touching the line alone does not create two artificial events.
     """
 
+    if feature_profile not in {"raw", "hierarchy", "leadlag"}:
+        raise ValueError("feature_profile must be raw, hierarchy, or leadlag")
     if 60 not in horizons or tick_size <= 0 or amplitude_threshold_ticks <= 0:
         raise ValueError("60s must be present and thresholds must be positive")
     if isinstance(primary_vwap, str):
@@ -197,72 +200,71 @@ def build_open_policy_data(
     scale_curvature = gap_stack_ticks @ quadratic_basis
     scale_consensus = np.sign(gap_stack_ticks).mean(axis=1)
     extra_values.extend((
-        ribbon_center,
-        (ribbon_center - mid) / tick_size,
-        ribbon_width,
-        ribbon_slope,
-        ribbon_width_delta,
+        ribbon_center, (ribbon_center - mid) / tick_size,
+        ribbon_width, ribbon_slope,
         (mid_vwaps[5] - mid_vwaps[60]) / tick_size,
-        scale_slope,
-        scale_curvature,
-        scale_consensus,
     ))
     extra_names.extend((
         "mid_vwap_ribbon_5_60s",
         "mid_vwap_ribbon_5_60s_minus_mid_ticks",
         "mid_vwap_ribbon_width_ticks",
         "mid_vwap_ribbon_slope_1s_ticks",
-        "mid_vwap_ribbon_width_delta_1s_ticks",
         "mid_vwap_5s_minus_60s_ticks",
+    ))
+    if feature_profile in {"hierarchy", "leadlag"}:
+        extra_values.extend((
+            ribbon_width_delta, scale_slope, scale_curvature, scale_consensus,
+        ))
+        extra_names.extend((
+        "mid_vwap_ribbon_width_delta_1s_ticks",
         "mid_vwap_scale_slope_ticks",
         "mid_vwap_scale_curvature_ticks",
         "mid_vwap_scale_consensus",
-    ))
-    for short, long in zip(ordered_horizons[:-1], ordered_horizons[1:], strict=True):
-        spread = (mid_vwaps[short] - mid_vwaps[long]) / tick_size
-        spread_delta = np.zeros(n, dtype=np.float64)
-        spread_delta[1:] = np.where(same, spread[1:] - spread[:-1], 0.0)
-        extra_values.extend((spread, spread_delta))
-        extra_names.extend((
-            f"mid_vwap_{short}s_minus_{long}s_ticks",
-            f"mid_vwap_{short}s_minus_{long}s_delta_1s_ticks",
         ))
+        for short, long in zip(ordered_horizons[:-1], ordered_horizons[1:], strict=True):
+            spread = (mid_vwaps[short] - mid_vwaps[long]) / tick_size
+            spread_delta = np.zeros(n, dtype=np.float64)
+            spread_delta[1:] = np.where(same, spread[1:] - spread[:-1], 0.0)
+            extra_values.extend((spread, spread_delta))
+            extra_names.extend((
+                f"mid_vwap_{short}s_minus_{long}s_ticks",
+                f"mid_vwap_{short}s_minus_{long}s_delta_1s_ticks",
+            ))
 
     # Causal lead/lag response.  At row t only returns observed through t are
     # used; the trading decision executes on the next second's BBO.
-    price_return = np.zeros(n, dtype=np.float64)
-    return_valid = np.zeros(n, dtype=bool)
-    price_return[1:] = np.where(same, (mid[1:] - mid[:-1]) / tick_size, 0.0)
-    return_valid[1:] = same & observed[1:] & observed[:-1]
-    price_lag = np.r_[0.0, price_return[:-1]]
-    valid_lag = np.r_[False, return_valid[:-1]]
-    for horizon in ordered_horizons:
-        vwap_return = np.zeros(n, dtype=np.float64)
-        vwap_return[1:] = np.where(
-            same, (mid_vwaps[horizon][1:] - mid_vwaps[horizon][:-1]) / tick_size, 0.0
-        )
-        vwap_lag = np.r_[0.0, vwap_return[:-1]]
-        pair_valid = return_valid & valid_lag
-        price_leads_corr, vwap_response_beta = _causal_rolling_correlation(
-            price_lag, vwap_return, pair_valid, segment_id, window=60
-        )
-        vwap_leads_corr, price_response_beta = _causal_rolling_correlation(
-            vwap_lag, price_return, pair_valid, segment_id, window=60
-        )
-        extra_values.extend((
-            price_leads_corr,
-            vwap_leads_corr,
-            price_leads_corr - vwap_leads_corr,
-            vwap_response_beta,
-            price_response_beta,
-        ))
-        extra_names.extend((
-            f"price_leads_vwap_{horizon}s_corr_60s",
-            f"vwap_{horizon}s_leads_price_corr_60s",
-            f"price_vwap_{horizon}s_lead_balance_60s",
-            f"vwap_{horizon}s_response_to_price_beta_60s",
-            f"price_response_to_vwap_{horizon}s_beta_60s",
-        ))
+    if feature_profile == "leadlag":
+        price_return = np.zeros(n, dtype=np.float64)
+        return_valid = np.zeros(n, dtype=bool)
+        price_return[1:] = np.where(same, (mid[1:] - mid[:-1]) / tick_size, 0.0)
+        return_valid[1:] = same & observed[1:] & observed[:-1]
+        price_lag = np.r_[0.0, price_return[:-1]]
+        valid_lag = np.r_[False, return_valid[:-1]]
+        for horizon in ordered_horizons:
+            vwap_return = np.zeros(n, dtype=np.float64)
+            vwap_return[1:] = np.where(
+                same, (mid_vwaps[horizon][1:] - mid_vwaps[horizon][:-1]) / tick_size, 0.0
+            )
+            vwap_lag = np.r_[0.0, vwap_return[:-1]]
+            pair_valid = return_valid & valid_lag
+            price_leads_corr, vwap_response_beta = _causal_rolling_correlation(
+                price_lag, vwap_return, pair_valid, segment_id, window=60
+            )
+            vwap_leads_corr, price_response_beta = _causal_rolling_correlation(
+                vwap_lag, price_return, pair_valid, segment_id, window=60
+            )
+            extra_values.extend((
+                price_leads_corr, vwap_leads_corr,
+                price_leads_corr - vwap_leads_corr,
+                vwap_response_beta, price_response_beta,
+            ))
+            extra_names.extend((
+                f"price_leads_vwap_{horizon}s_corr_60s",
+                f"vwap_{horizon}s_leads_price_corr_60s",
+                f"price_vwap_{horizon}s_lead_balance_60s",
+                f"vwap_{horizon}s_response_to_price_beta_60s",
+                f"price_response_to_vwap_{horizon}s_beta_60s",
+            ))
 
     primary = (
         ribbon_center if primary_vwap == "ribbon" else mid_vwaps[int(primary_vwap)]

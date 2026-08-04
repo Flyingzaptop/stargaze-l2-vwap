@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+import polars as pl
+import pytest
 
-from stargaze_ml.gold.l2_open_events import _carry_nonzero_sign
+from stargaze_ml.gold.l2_open_events import _carry_nonzero_sign, build_open_policy_data
 from stargaze_ml.gold.l2_open_policy import L2OpenPolicy, exploration_probability
 from stargaze_ml.gold.l2_open_reinforce import (
     OpenReinforceConfig,
@@ -70,3 +72,8 @@ def test_threshold_entry_skips_missing_next_second_execution() -> None:
         observed=observed,
     )
     assert entry == 7
+
+
+def test_open_feature_profile_rejects_unknown_value() -> None:
+    with pytest.raises(ValueError, match="feature_profile"):
+        build_open_policy_data(pl.DataFrame(), feature_profile="future")
