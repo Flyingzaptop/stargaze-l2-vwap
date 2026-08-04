@@ -90,7 +90,7 @@ def _trade_rows(
     data: PreparedOpenData, normalizer: RobustNormalizer, events: np.ndarray,
     open_threshold: float, device: torch.device,
     market_config: OpenReinforceConfig, config: RiskDirectionConfig,
-) -> list[dict[str, float]]:
+) -> list[dict[str, float | int]]:
     entries = _open_entries(teacher, data, normalizer, events, open_threshold, device)
     rows: list[dict[str, float]] = []
     model.eval()
@@ -107,6 +107,8 @@ def _trade_rows(
             opportunity=float(torch.sigmoid(outputs[6][0,offset]).cpu())
             long_pnl,short_pnl=executable_side_pnls(data,int(entry),crossing,market_config)
             rows.append({
+                "event_index":int(event),"entry_index":int(entry),
+                "entry_ts_ns":int(data.ts_ns[int(entry)]),
                 "long_pnl":float(long_pnl[0]),"short_pnl":float(short_pnl[0]),
                 "side_probability":side,"predicted_long_pnl":pred_long,
                 "predicted_short_pnl":pred_short,"long_tail_probability":long_tail,

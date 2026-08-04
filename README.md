@@ -82,12 +82,22 @@ python tools\train_gold_l2_risk_direction.py `
   --out-dir runs\gold_l2_multihorizon\primary_60\risk_direction `
   --epochs 15 --tail-threshold-ticks 500 --tail-weight 1.0 `
   --seed 20260810 --device auto
+
+python tools\evaluate_gold_l2_causal_rate.py `
+  --prepared runs\gold_l2_multihorizon\primary_60\prepared_l2_open_policy.npz `
+  --open-checkpoint runs\gold_l2_multihorizon\primary_60\open_oracle\final.pt `
+  --risk-checkpoint runs\gold_l2_multihorizon\primary_60\risk_direction\final.pt `
+  --out runs\gold_l2_multihorizon\primary_60\risk_direction\causal_rate_report.json `
+  --device auto
 ```
 
 The current best validation-selected risk policy produced 474 fixed holdout
 trades: +93 ticks total, +0.20 ticks/trade, 59.3% wins, and -657 ticks at the
 5th percentile. This is an experimental near-break-even result, not evidence
 of deployable edge. Raw datasets, checkpoints, and reports remain gitignored.
+The adaptive threshold uses only earlier scores and enforces a validation-chosen
+10–25 trade daily cap. See [`L2_VWAP_EXPERIMENTS.md`](L2_VWAP_EXPERIMENTS.md)
+for the experiment ledger and limitations.
 
 ### Tests
 
@@ -103,6 +113,7 @@ Key implementation files:
 - `stargaze_ml/gold/l2_open_reinforce.py` — entry-only REINFORCE policy.
 - `stargaze_ml/gold/l2_profit_direction.py` — magnitude-aware side/value model.
 - `stargaze_ml/gold/l2_risk_direction.py` — value, opportunity and tail-risk heads.
+- `stargaze_ml/gold/l2_causal_rate.py` — causal rolling-quantile rate controller.
 - `tests/test_gold_l2_*.py` — causal and execution-contract regression tests.
 
 ## Market data collector
