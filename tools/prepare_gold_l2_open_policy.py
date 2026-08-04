@@ -20,11 +20,20 @@ def main() -> None:
     parser.add_argument("--primary-vwap", default="60")
     parser.add_argument("--feature-profile", choices=("raw", "hierarchy", "leadlag"), default="raw")
     parser.add_argument("--match-train-good-events", type=int)
+    parser.add_argument(
+        "--all-test",
+        action="store_true",
+        help="prepare a forward-only dataset without borrowing historical split indices",
+    )
     args = parser.parse_args()
     out = args.out_dir.resolve(); out.mkdir(parents=True, exist_ok=True)
     seconds = pl.read_parquet(args.seconds.resolve(strict=True))
-    with np.load(args.base.resolve(strict=True), allow_pickle=False) as old:
-        train_end = int(old["train_end"]); validation_end = int(old["validation_end"])
+    if args.all_test:
+        train_end = 0
+        validation_end = 0
+    else:
+        with np.load(args.base.resolve(strict=True), allow_pickle=False) as old:
+            train_end = int(old["train_end"]); validation_end = int(old["validation_end"])
     primary_vwap: int | str = (
         "ribbon" if args.primary_vwap == "ribbon" else int(args.primary_vwap)
     )
@@ -74,6 +83,7 @@ def main() -> None:
         "gate_fraction": args.gate_fraction,
         "gate_ticks": amplitude_ticks * args.gate_fraction,
         "min_duration_seconds": 30,
+        "split_contract": "all_forward_test" if args.all_test else "borrowed_from_base",
         "train_events": int(train_events.sum()),
         "train_gated_events": int((train_events & e.gated).sum()),
         "train_good_events": int((train_events & e.good).sum()),

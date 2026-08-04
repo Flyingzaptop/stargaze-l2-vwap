@@ -56,7 +56,7 @@ dominate total PnL.
 
 In the positive seed-10 test, five losses below -500 ticks contributed -4,933
 ticks while the other 95 trades contributed +7,740. All five were incorrect
-longs. At entry, price was below most VWAP horizons while 5–120 second VWAP
+longs. At entry, price was below most VWAP horizons while 5-120 second VWAP
 slopes were already following price downward: a clear PRICE-dominance pattern.
 
 Several causal implementations were tested without test-based authorization:
@@ -67,6 +67,10 @@ Several causal implementations were tested without test-based authorization:
 - A symmetric snapshot dominance model had validation/test AUC 0.43/0.50.
 - A symmetric LSTM dominance model reached entry AUC 0.59/0.56, but validation
   selected no veto; the fixed strategy therefore kept the original side.
+- An interpretable 93-field hierarchy model combined scale consensus, ribbon
+  ordering, gap expansion and lagged VWAP/price velocity. Validation selected
+  43 trades at +103.49 ticks/trade, but fixed test lost -70.91 ticks/trade and
+  made no high-confidence swaps.
 
 The physical hypothesis remains plausible, but the current dataset cannot
 calibrate a safe dominance override. More untouched days are required.
@@ -91,3 +95,8 @@ The test period has now been inspected across several model variants and is
 therefore an exploratory holdout, not a pristine final test. Before deployment,
 freeze the pipeline and evaluate once on newer untouched L2 days, then run a
 forward paper-trading period with the same execution contract.
+
+The frozen seed-10 research bundle is in `artifacts/gold_l2_v1`. It contains the
+open model, risk-direction model, exact rolling-score history, and controller
+settings. The live recorder writes immutable depth and rebuilt BBO parts, so a
+new sample can be evaluated without refitting.

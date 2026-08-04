@@ -11,6 +11,11 @@ results show that entry opportunity detection is materially easier than side
 selection. The best fixed holdout result is near break-even after modeled costs,
 but heavy-tail direction errors still prevent calling the strategy tradable.
 
+The reproducible frozen research policy is included in `artifacts/gold_l2_v1`:
+two small checkpoints plus the exact causal-rate state used for untouched
+forward evaluation. Raw/prepared L2 is excluded because it is roughly 434 MB and
+must be collected or supplied separately.
+
 ## Current L2/VWAP pipeline
 
 ```text
@@ -74,6 +79,22 @@ used by the research pipeline:
 python tools\prepare_recorded_gold_l2_seconds.py `
   --recording runs\gold_l2_live `
   --output runs\gold_l2_live\l2_seconds.parquet
+```
+
+Prepare that sample strictly as untouched forward data and evaluate only the
+already-frozen checkpoints/controller:
+
+```powershell
+python tools\prepare_gold_l2_open_policy.py `
+  --seconds runs\gold_l2_live\l2_seconds.parquet `
+  --out-dir runs\gold_l2_live\prepared --all-test
+
+python tools\evaluate_frozen_gold_l2_forward.py `
+  --prepared runs\gold_l2_live\prepared\prepared_l2_open_policy.npz `
+  --open-checkpoint artifacts\gold_l2_v1\open_policy.pt `
+  --risk-checkpoint artifacts\gold_l2_v1\risk_direction.pt `
+  --policy-report artifacts\gold_l2_v1\policy.json `
+  --out runs\gold_l2_live\forward_report.json
 ```
 
 For a complete reproducible run, use the orchestrator. It fingerprints both

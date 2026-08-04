@@ -11,6 +11,7 @@ from stargaze_ml.gold.l2_causal_rate import (
     CausalRateConfig,
     causal_rate_select,
     direction_and_score,
+    robust_validation_score,
     summarize_selected,
 )
 from stargaze_ml.gold.l2_open_policy import L2OpenPolicy
@@ -76,7 +77,7 @@ def main() -> None:
             expected_candidates_per_day=expected, fallback_cutoff=fallback, config=config,
         )
         metrics = summarize_selected(val_chosen)
-        metrics["selection_score"] = float(metrics["mean_pnl_ticks"]) + 0.05 * float(metrics.get("p05_pnl_ticks", 0.0))
+        metrics["selection_score"] = robust_validation_score(metrics)
         grid.append({"target_trades_per_day": target, **metrics})
     best = max(grid, key=lambda row: float(row["selection_score"]))
     fixed_config = CausalRateConfig(target_trades_per_day=int(best["target_trades_per_day"]))
@@ -85,6 +86,10 @@ def main() -> None:
         expected_candidates_per_day=expected, fallback_cutoff=fallback,
         config=fixed_config, initial_scores=initial_scores,
     )
+    all_scores = initial_scores + [
+        direction_and_score(row, mode=mode, penalty=penalty, filter_field=field)[1]
+        for row in test_rows
+    ]
     report = {
         "device": str(device), "mode": mode, "penalty": penalty,
         "filter_field": field, "fallback_cutoff": fallback,
@@ -92,6 +97,17 @@ def main() -> None:
         "validation_grid": grid, "selected_on_validation": best,
         "fixed_test": summarize_selected(test_chosen),
         "fixed_test_trades": test_chosen,
+        "score_history_tail": all_scores[-fixed_config.history_size :],
+        "frozen_policy": {
+            "mode": mode,
+            "penalty": penalty,
+            "filter_field": field,
+            "fallback_cutoff": fallback,
+            "expected_candidates_per_day": expected,
+            "target_trades_per_day": int(best["target_trades_per_day"]),
+            "history_size": fixed_config.history_size,
+            "min_history": fixed_config.min_history,
+        },
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2), encoding="utf-8")
