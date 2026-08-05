@@ -79,3 +79,14 @@ def test_adaptive_frozen_policy_requires_causal_history(tmp_path: Path) -> None:
     policy_path.write_text(json.dumps(policy), encoding="utf-8")
     with pytest.raises(ValueError, match="requires a frozen amplitude history"):
         load_frozen_policy_bundle(directory)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["gold_l2_v1", "gold_l2_v2_ensemble", "gold_l2_v3_warm15_hybrid"],
+)
+def test_committed_frozen_bundle_hashes_are_valid(name: str) -> None:
+    root = Path(__file__).resolve().parents[1]
+    bundle = load_frozen_policy_bundle(root / "artifacts" / name)
+    assert bundle.open_checkpoint.is_file()
+    assert bundle.risk_checkpoints
