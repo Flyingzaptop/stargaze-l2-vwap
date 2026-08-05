@@ -9,17 +9,36 @@
 - Shorter primary VWAPs generate much more microstructure noise.
 - Raw multi-horizon inputs beat the first explicit hierarchy experiment for
   direction selection.
-- The best current direction model remains unprofitable after next-BBO spread,
-  commission and slippage because rare wrong-side trades dominate the mean.
+- Multi-horizon lead/lag, explicit VWAP hierarchy and entry-only direction
+  fine-tuning did not produce a validation-stable direction edge.
+- Some policies look profitable on full validation or exploratory test, but no
+  policy survives the required chronological first-half/second-half validation.
+- Therefore no frozen policy is approved for trading. Historical bundles are
+  research artifacts only.
 - A fixed probability threshold is not rate-stable across validation and test.
+- The untouched forward recorder and frozen streaming evaluator are operational;
+  fresh coverage is still too small to estimate expectancy.
 
-## Current research direction
+## Completed pipeline
 
-1. Add causal PRICE-to-VWAP and VWAP-to-PRICE lead/lag response fields.
-2. Weight side mistakes by `abs(PnL_long - PnL_short)`.
-3. Regress both executable long and short PnL as auxiliary values.
-4. Replace fixed probability-rate assumptions with a causal adaptive selector.
-5. Keep entry, direction and execution accounting independently auditable.
+1. Causal BBO reconstruction, second bars and 5/10/15/30/45/60/90/120/300/
+   600/900s bid/ask VWAP hierarchy.
+2. Entry model, direction model, value heads, lead/lag fields, adaptive rate gate
+   and warm-up exploration.
+3. Frozen ensembles with live/batch parity, uncertainty, next-BBO execution and
+   costs.
+4. Raw L2 recorder, integrity audit, converter, replay, forward A/B report and
+   strict all-test contract.
+5. Chronological robust validation that rejects unstable policies.
+
+## Next evidence required
+
+1. Collect multiple untouched days and market regimes without model selection.
+2. Evaluate already-frozen bundles only; require at least 30 completed trades per
+   policy before ranking and substantially more before any trading conclusion.
+3. Treat all reused historical test results as exploratory.
+
+Detailed results and rejected variants are in `L2_VWAP_EXPERIMENTS.md`.
 
 ## Leakage contract
 
