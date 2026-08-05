@@ -9,6 +9,8 @@ description = "Causal L2/VWAP market-microstructure research pipeline."
 requires-python = ">=3.12"
 dependencies = [
   "aiohttp>=3.9",
+  # Install the official cTrader client with tools/install_ctrader_secure.py;
+  # its wheel pins vulnerable transitive versions.
   "inputimeout>=1.0.4",
   "joblib>=1.4",
   "matplotlib>=3.9",
