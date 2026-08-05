@@ -38,6 +38,11 @@ def main() -> None:
         type=float,
         help="validation-selected threshold for a compatible replacement open model",
     )
+    parser.add_argument(
+        "--print-full-report",
+        action="store_true",
+        help="print the complete report instead of the concise summary",
+    )
     args = parser.parse_args()
 
     device = torch.device(
@@ -183,7 +188,24 @@ def main() -> None:
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(json.dumps(report, indent=2))
+    if args.print_full_report:
+        printed = report
+    else:
+        chosen = report["selected_on_validation"]
+        printed = {
+            "out": str(args.out.resolve()),
+            "validation_approved": report["validation_approved"],
+            "selected_on_validation": {
+                key: chosen[key]
+                for key in (
+                    "mode", "penalty", "filter_field", "target_trades_per_day",
+                    "selection_score", "trades", "mean_pnl_ticks",
+                )
+            },
+            "chronological_half_scores": chosen["robust_scores"],
+            "fixed_test": report["fixed_test"],
+        }
+    print(json.dumps(printed, indent=2))
 
 
 if __name__ == "__main__":
