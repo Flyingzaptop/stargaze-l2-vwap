@@ -8,6 +8,7 @@ secrets*.json
 .secrets.loaded.json
 dist/
 build/
+*.egg-info/
 tools/*
 !tools/*.py
 *.spec
