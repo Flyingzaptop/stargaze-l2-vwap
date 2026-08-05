@@ -89,6 +89,14 @@ def test_default_vwap_hierarchy_includes_requested_intermediate_scales() -> None
     assert 600 in VWAP_HORIZONS_SECONDS
 
 
+@pytest.mark.parametrize("horizons", [(60, 5), (5, 60, 60), (0, 60)])
+def test_open_policy_rejects_invalid_horizon_contract(
+    horizons: tuple[int, ...]
+) -> None:
+    with pytest.raises(ValueError, match="horizons must"):
+        build_open_policy_data(pl.DataFrame(), horizons=horizons)
+
+
 def test_event_indices_require_observed_exit_execution() -> None:
     data = object.__new__(PreparedOpenData)
     data.event_start = np.asarray([1, 10])

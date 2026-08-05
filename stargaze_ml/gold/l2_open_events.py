@@ -112,8 +112,17 @@ def build_open_policy_data(
 
     if feature_profile not in {"raw", "hierarchy", "leadlag"}:
         raise ValueError("feature_profile must be raw, hierarchy, or leadlag")
-    if 60 not in horizons or tick_size <= 0 or amplitude_threshold_ticks <= 0:
-        raise ValueError("60s must be present and thresholds must be positive")
+    horizons = tuple(int(value) for value in horizons)
+    if (
+        tuple(sorted(set(horizons))) != horizons
+        or any(value <= 0 for value in horizons)
+        or 60 not in horizons
+    ):
+        raise ValueError(
+            "horizons must be positive, unique, increasing and include 60s"
+        )
+    if tick_size <= 0 or amplitude_threshold_ticks <= 0:
+        raise ValueError("tick size and amplitude threshold must be positive")
     if isinstance(primary_vwap, str):
         if primary_vwap != "ribbon":
             raise ValueError("primary_vwap must be a horizon or 'ribbon'")
