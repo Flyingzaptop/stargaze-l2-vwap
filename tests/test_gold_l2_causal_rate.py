@@ -4,6 +4,7 @@ from stargaze_ml.gold.l2_causal_rate import (
     CausalRateConfig,
     CausalRateController,
     causal_rate_select,
+    direction_and_score,
     robust_validation_score,
     summarize_selected,
 )
@@ -73,3 +74,25 @@ def test_summary_and_robust_score_penalize_tail_loss() -> None:
     assert metrics["worst_pnl_ticks"] == -100.0
     assert metrics["cvar05_pnl_ticks"] == -100.0
     assert robust_validation_score(metrics) < float(metrics["mean_pnl_ticks"])
+
+
+def test_direction_confidence_scores_are_causal_row_functions() -> None:
+    row = _row(0, 1.0)
+    row.update({
+        "side_probability": 0.8,
+        "predicted_long_pnl": 20.0,
+        "predicted_short_pnl": -5.0,
+    })
+    _, confidence, _ = direction_and_score(
+        row, mode="classifier", penalty=0.0, filter_field="side_confidence"
+    )
+    _, gap, _ = direction_and_score(
+        row, mode="classifier", penalty=0.0, filter_field="value_gap"
+    )
+    _, agreement, _ = direction_and_score(
+        row, mode="classifier", penalty=0.0,
+        filter_field="classifier_value_agreement",
+    )
+    assert abs(confidence - 0.3) < 1e-12
+    assert gap == 25.0
+    assert agreement == 1.0

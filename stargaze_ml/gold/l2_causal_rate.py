@@ -118,6 +118,18 @@ def direction_and_score(
         "opportunity_probability": float(row["opportunity_probability"]),
         "negative_tail_probability": -tail,
         "risk_edge": predicted - penalty * tail,
+        "side_confidence": abs(float(row["side_probability"]) - 0.5),
+        "value_gap": abs(
+            float(row["predicted_long_pnl"]) - float(row["predicted_short_pnl"])
+        ),
+        "classifier_value_agreement": float(
+            (float(row["side_probability"]) >= 0.5)
+            == (
+                float(row["predicted_long_pnl"])
+                >= float(row["predicted_short_pnl"])
+            )
+        ),
+        "risk_direction_margin": abs(long_risk - short_risk),
         "negative_side_disagreement": -side_std,
         "negative_tail_disagreement": -chosen_tail_std,
         "negative_risk_uncertainty": -risk_uncertainty,

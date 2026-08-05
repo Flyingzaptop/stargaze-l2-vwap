@@ -102,6 +102,8 @@ def main() -> None:
                 "opportunity_probability", "negative_tail_probability", "risk_edge",
                 "negative_side_disagreement", "negative_tail_disagreement",
                 "negative_risk_uncertainty", "risk_evidence",
+                "side_confidence", "value_gap", "classifier_value_agreement",
+                "risk_direction_margin",
             ):
                 all_scores = [direction_and_score(row, mode=mode, penalty=penalty, filter_field=field)[1] for row in val_rows]
                 for target in (10, 15, 20, 25):
