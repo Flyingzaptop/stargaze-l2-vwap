@@ -8,7 +8,7 @@ import torch
 
 from stargaze_ml.gold.l2_causal_rate import CausalRateConfig, causal_rate_select, summarize_selected
 from stargaze_ml.gold.l2_contracts import assert_feature_names
-from stargaze_ml.gold.frozen_policy import load_frozen_policy_bundle
+from stargaze_ml.gold.frozen_policy import file_sha256, load_frozen_policy_bundle
 from stargaze_ml.gold.l2_open_policy import L2OpenPolicy
 from stargaze_ml.gold.l2_open_reinforce import OpenReinforceConfig, PreparedOpenData, _event_indices
 from stargaze_ml.gold.l2_risk_direction import (
@@ -43,12 +43,14 @@ def main() -> int:
         open_path = bundle.open_checkpoint
         risk_paths = list(bundle.risk_checkpoints)
         policy_report = bundle.policy
+        policy_path = bundle.policy_path
     else:
         if args.open_checkpoint is None or args.risk_checkpoint is None or args.policy_report is None:
             raise ValueError("provide --bundle or all three checkpoint/policy paths")
         open_path = args.open_checkpoint.resolve(strict=True)
         risk_paths = [args.risk_checkpoint.resolve(strict=True)]
-        policy_report = json.loads(args.policy_report.resolve(strict=True).read_text(encoding="utf-8"))
+        policy_path = args.policy_report.resolve(strict=True)
+        policy_report = json.loads(policy_path.read_text(encoding="utf-8"))
     data = PreparedOpenData(args.prepared)
     open_state = torch.load(open_path, map_location=device, weights_only=False)
     risk_states = [torch.load(path, map_location=device, weights_only=False) for path in risk_paths]
@@ -110,6 +112,12 @@ def main() -> int:
     )
     report = {
         "evaluation_contract": "frozen checkpoints, threshold, direction rule, rate and score history",
+        "provenance": {
+            "prepared_sha256": file_sha256(args.prepared.resolve(strict=True)),
+            "policy_sha256": file_sha256(policy_path),
+            "open_sha256": file_sha256(open_path),
+            "risk_sha256s": [file_sha256(path) for path in risk_paths],
+        },
         "device": str(device),
         "rows": len(data.x),
         "completed_events": int(len(events)),

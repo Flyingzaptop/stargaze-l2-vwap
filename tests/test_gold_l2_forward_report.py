@@ -6,8 +6,14 @@ from stargaze_ml.gold.l2_forward_report import (
 )
 
 
-def _policy(trades: int, mean: float) -> dict[str, object]:
+def _policy(
+    trades: int, mean: float, *, prepared_hash: str = "prepared-a"
+) -> dict[str, object]:
     return {
+        "provenance": {
+            "prepared_sha256": prepared_hash,
+            "policy_sha256": f"policy-{trades}-{mean}",
+        },
         "rows": 100,
         "completed_events": 4,
         "entry_candidates": 3,
@@ -30,6 +36,8 @@ def test_forward_report_refuses_to_rank_tiny_sample() -> None:
         audit, {"v2": _policy(1, -10.0), "v3": _policy(0, 0.0)}
     )
     assert report["sample_sufficient"] is False
+    assert report["provenance"]["complete"] is True
+    assert report["provenance"]["prepared_sha256"] == "prepared-a"
     assert "without ranking" in str(report["conclusion"])
     markdown = forward_ab_markdown(report)
     assert "| v2 | 4 | 3 | 1 | -10.00 | 50.0% |" in markdown
@@ -40,3 +48,18 @@ def test_forward_report_marks_descriptive_threshold() -> None:
         {}, {"v2": _policy(30, 1.0), "v3": _policy(30, 2.0)}
     )
     assert report["sample_sufficient"] is True
+
+
+def test_forward_report_rejects_mixed_prepared_data() -> None:
+    try:
+        build_forward_ab_report(
+            {},
+            {
+                "v2": _policy(30, 1.0, prepared_hash="prepared-a"),
+                "v3": _policy(30, 2.0, prepared_hash="prepared-b"),
+            },
+        )
+    except ValueError as exc:
+        assert "different prepared data" in str(exc)
+    else:
+        raise AssertionError("mixed forward datasets must be rejected")

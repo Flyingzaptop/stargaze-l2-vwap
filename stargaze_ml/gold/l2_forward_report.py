@@ -26,12 +26,32 @@ def build_forward_ab_report(
 ) -> dict[str, Any]:
     if minimum_trades < 1:
         raise ValueError("minimum_trades must be positive")
+    prepared_hashes = {
+        str(report.get("provenance", {}).get("prepared_sha256", ""))
+        for report in policies.values()
+    }
+    prepared_hashes.discard("")
+    if len(prepared_hashes) > 1:
+        raise ValueError("policy reports were evaluated on different prepared data")
+    provenance_complete = bool(policies) and all(
+        bool(report.get("provenance", {}).get("prepared_sha256"))
+        and bool(report.get("provenance", {}).get("policy_sha256"))
+        for report in policies.values()
+    )
     summaries = {name: _policy_summary(report) for name, report in policies.items()}
     enough = bool(summaries) and all(
         int(summary["trades"]) >= minimum_trades for summary in summaries.values()
     )
     return {
         "contract": "untouched forward; frozen models/controller; next-second BBO; first VWAP crossing",
+        "provenance": {
+            "complete": provenance_complete,
+            "prepared_sha256": next(iter(prepared_hashes), None),
+            "policy_sha256s": {
+                name: report.get("provenance", {}).get("policy_sha256")
+                for name, report in policies.items()
+            },
+        },
         "recording": {
             "duration_seconds": float(audit.get("duration_seconds", 0.0)),
             "raw_rows": int(audit.get("raw_rows", 0)),
@@ -67,6 +87,7 @@ def forward_ab_markdown(report: dict[str, Any]) -> str:
         f"- Observed seconds: {100.0 * float(recording['observed_second_fraction']):.2f}%",
         f"- Invalid/crossed snapshots: {int(recording['invalid_or_crossed_snapshots'])}",
         f"- Unknown deletes: {int(recording['unknown_deleted_rows'])}",
+        f"- Provenance hashes complete: {bool(report['provenance']['complete'])}",
         "",
         "| Policy | Completed events | Candidates | Trades | Mean ticks | Win rate |",
         "|---|---:|---:|---:|---:|---:|",
