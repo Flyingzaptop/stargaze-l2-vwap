@@ -53,7 +53,16 @@ Python 3.12+ and a CUDA-capable PyTorch build are recommended.
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
+python tools\install_ctrader_secure.py
 ```
+
+The official `ctrader-open-api` 0.9.2 wheel pins vulnerable 2024 transitive
+versions. The installer intentionally installs only its MIT client code after
+the project installs audited modern protobuf/Twisted/OpenSSL/requests versions,
+then verifies imports and a protocol roundtrip. Do not install the wheel with
+its default dependencies. `pip check` will still display the upstream wheel's
+stale exact-pin metadata; `python -m pip_audit -r requirements.txt` must remain
+clean and the installer is the compatibility check used here.
 
 Copy the placeholder secrets file and fill it locally. Runtime secret files are
 gitignored and must never be committed.
