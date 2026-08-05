@@ -8,7 +8,11 @@ import numpy as np
 import polars as pl
 
 from stargaze_ml.gold.l2_open_events import VWAP_HORIZONS_SECONDS, build_open_policy_data
-from stargaze_ml.gold.frozen_policy import load_frozen_policy_bundle, policy_vwap_horizons
+from stargaze_ml.gold.frozen_policy import (
+    file_sha256,
+    load_frozen_policy_bundle,
+    policy_vwap_horizons,
+)
 
 
 def main() -> None:
@@ -35,7 +39,9 @@ def main() -> None:
     parser.add_argument("--adaptive-gate-target", type=int)
     args = parser.parse_args()
     out = args.out_dir.resolve(); out.mkdir(parents=True, exist_ok=True)
-    seconds = pl.read_parquet(args.seconds.resolve(strict=True))
+    seconds_path = args.seconds.resolve(strict=True)
+    seconds_sha256 = file_sha256(seconds_path)
+    seconds = pl.read_parquet(seconds_path)
     if args.all_test:
         train_end = 0
         validation_end = 0
@@ -127,10 +133,12 @@ def main() -> None:
         event_duration_seconds=e.duration_seconds, event_amplitude_ticks=e.amplitude_ticks,
         event_gate_index=e.gate_index, event_gated=e.gated, event_good=e.good,
         train_end=np.asarray(train_end), validation_end=np.asarray(validation_end),
+        source_seconds_sha256=np.asarray(seconds_sha256),
     )
     train_events = e.crossing_2 + 1 < train_end
     manifest = {
         "rows": len(data.x), "features": list(data.feature_names),
+        "source_seconds_sha256": seconds_sha256,
         "primary_vwap": str(primary_vwap),
         "feature_profile": feature_profile,
         "vwap_horizons_seconds": list(horizons),

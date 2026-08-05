@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from stargaze_ml.gold.l2_causal_rate import CausalRateConfig, causal_rate_select, summarize_selected
@@ -52,6 +53,12 @@ def main() -> int:
         policy_path = args.policy_report.resolve(strict=True)
         policy_report = json.loads(policy_path.read_text(encoding="utf-8"))
     data = PreparedOpenData(args.prepared)
+    with np.load(args.prepared.resolve(strict=True), allow_pickle=False) as prepared_npz:
+        source_seconds_sha256 = (
+            str(prepared_npz["source_seconds_sha256"])
+            if "source_seconds_sha256" in prepared_npz.files
+            else None
+        )
     open_state = torch.load(open_path, map_location=device, weights_only=False)
     risk_states = [torch.load(path, map_location=device, weights_only=False) for path in risk_paths]
     risk_state = risk_states[0]
@@ -113,6 +120,7 @@ def main() -> int:
     report = {
         "evaluation_contract": "frozen checkpoints, threshold, direction rule, rate and score history",
         "provenance": {
+            "source_seconds_sha256": source_seconds_sha256,
             "prepared_sha256": file_sha256(args.prepared.resolve(strict=True)),
             "policy_sha256": file_sha256(policy_path),
             "open_sha256": file_sha256(open_path),

@@ -26,15 +26,16 @@ def build_forward_ab_report(
 ) -> dict[str, Any]:
     if minimum_trades < 1:
         raise ValueError("minimum_trades must be positive")
-    prepared_hashes = {
-        str(report.get("provenance", {}).get("prepared_sha256", ""))
+    source_hashes = {
+        str(report.get("provenance", {}).get("source_seconds_sha256", ""))
         for report in policies.values()
     }
-    prepared_hashes.discard("")
-    if len(prepared_hashes) > 1:
-        raise ValueError("policy reports were evaluated on different prepared data")
+    source_hashes.discard("")
+    if len(source_hashes) > 1:
+        raise ValueError("policy reports were evaluated on different source seconds")
     provenance_complete = bool(policies) and all(
-        bool(report.get("provenance", {}).get("prepared_sha256"))
+        bool(report.get("provenance", {}).get("source_seconds_sha256"))
+        and bool(report.get("provenance", {}).get("prepared_sha256"))
         and bool(report.get("provenance", {}).get("policy_sha256"))
         for report in policies.values()
     )
@@ -46,7 +47,11 @@ def build_forward_ab_report(
         "contract": "untouched forward; frozen models/controller; next-second BBO; first VWAP crossing",
         "provenance": {
             "complete": provenance_complete,
-            "prepared_sha256": next(iter(prepared_hashes), None),
+            "source_seconds_sha256": next(iter(source_hashes), None),
+            "prepared_sha256s": {
+                name: report.get("provenance", {}).get("prepared_sha256")
+                for name, report in policies.items()
+            },
             "policy_sha256s": {
                 name: report.get("provenance", {}).get("policy_sha256")
                 for name, report in policies.items()

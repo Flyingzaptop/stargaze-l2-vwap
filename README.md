@@ -113,7 +113,7 @@ python tools\evaluate_frozen_gold_l2_forward.py `
 
 Combine the final recording audit and multiple frozen-policy reports without
 ranking an undersized sample. The report verifies that every policy was run on
-the same prepared-file hash and records the bundle-policy hashes:
+the same source-seconds hash and records each prepared/bundle-policy hash:
 
 ```powershell
 python tools\report_gold_l2_forward_ab.py `
