@@ -196,7 +196,8 @@ wins and -285 worst. Ignoring direction, those same entries had +62.82 oracle
 ticks/trade and a positive side in 72.7% of cases; the direction policy chose
 the better side only 54.5% of the time. V3 selected no trades. This sample is
 below the 30-trade descriptive threshold and cannot rank policies, but it again
-locates the failure in direction rather than entry opportunity.
+locates the failure in direction rather than entry opportunity. First-crossing
+holding time was 18-136s (54s median); 10 of 11 trades were inside 5-120s.
 
 Entry timing contains useful information: with oracle direction, most selected
 events have a profitable side. Direction remains the bottleneck. Tail-aware
