@@ -23,6 +23,9 @@ def _policy(
             "mean_pnl_ticks": mean,
             "total_pnl_ticks": trades * mean,
             "win_rate": 0.5,
+            "p05_pnl_ticks": mean - 2.0,
+            "worst_pnl_ticks": mean - 3.0,
+            "standard_error_ticks": 1.25,
         },
     }
 
@@ -41,7 +44,7 @@ def test_forward_report_refuses_to_rank_tiny_sample() -> None:
     assert report["provenance"]["source_seconds_sha256"] == "seconds-a"
     assert "without ranking" in str(report["conclusion"])
     markdown = forward_ab_markdown(report)
-    assert "| v2 | 4 | 3 | 1 | -10.00 | 50.0% |" in markdown
+    assert "| v2 | 4 | 3 | 1 | -10.00 +/- 1.25 | 50.0% | -13.00 |" in markdown
 
 
 def test_forward_report_marks_descriptive_threshold() -> None:

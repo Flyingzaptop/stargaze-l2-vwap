@@ -13,8 +13,12 @@ def _policy_summary(report: dict[str, Any]) -> dict[str, Any]:
         "entry_candidates": int(report.get("entry_candidates", 0)),
         "trades": int(selected.get("trades", 0)),
         "mean_pnl_ticks": float(selected.get("mean_pnl_ticks", 0.0)),
+        "median_pnl_ticks": float(selected.get("median_pnl_ticks", 0.0)),
         "total_pnl_ticks": float(selected.get("total_pnl_ticks", 0.0)),
         "win_rate": float(selected.get("win_rate", 0.0)),
+        "p05_pnl_ticks": float(selected.get("p05_pnl_ticks", 0.0)),
+        "worst_pnl_ticks": float(selected.get("worst_pnl_ticks", 0.0)),
+        "standard_error_ticks": float(selected.get("standard_error_ticks", 0.0)),
     }
 
 
@@ -94,15 +98,17 @@ def forward_ab_markdown(report: dict[str, Any]) -> str:
         f"- Unknown deletes: {int(recording['unknown_deleted_rows'])}",
         f"- Provenance hashes complete: {bool(report['provenance']['complete'])}",
         "",
-        "| Policy | Completed events | Candidates | Trades | Mean ticks | Win rate |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| Policy | Events | Candidates | Trades | Mean +/- SE | Win rate | Worst |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for name, policy in report["policies"].items():
         lines.append(
             f"| {name} | {int(policy['completed_events'])} | "
             f"{int(policy['entry_candidates'])} | {int(policy['trades'])} | "
-            f"{float(policy['mean_pnl_ticks']):+.2f} | "
-            f"{100.0 * float(policy['win_rate']):.1f}% |"
+            f"{float(policy['mean_pnl_ticks']):+.2f} +/- "
+            f"{float(policy['standard_error_ticks']):.2f} | "
+            f"{100.0 * float(policy['win_rate']):.1f}% | "
+            f"{float(policy['worst_pnl_ticks']):+.2f} |"
         )
     lines.extend(("", f"Conclusion: {report['conclusion']}.", ""))
     return "\n".join(lines)
