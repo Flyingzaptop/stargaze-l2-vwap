@@ -18,6 +18,10 @@ Raw causal bid/ask quote-VWAPs are calculated at 5, 10, 15, 30, 45, 60,
 adjacent-horizon differences, ribbon center/width, hierarchy curvature and
 causal rolling PRICE-to-VWAP response fields.
 
+The historical experiments below used that nine-horizon contract. New training
+runs additionally include the requested 90s and 600s levels; frozen legacy
+bundles retain their original feature contract exactly.
+
 The 60-second VWAP remains the primary excursion boundary. Experiments with
 15, 30, 45 seconds and a ribbon target produced noisier entries. Lead/lag
 features reduced direction quality in their current form.
@@ -154,6 +158,21 @@ degraded. The ensemble looked strong on validation (+91.05 ticks/trade over 44,
 robust score +35.56) but lost -38.13 ticks/trade over 40 fixed-test trades.
 This sharper validation/test divergence confirms selection overfit rather than
 a robust entry-alignment gain.
+
+### Extended 90s/600s hierarchy
+
+The raw profile was extended from 79 to 91 fields by adding bid/ask values,
+distances and one-second slopes at 90s and 600s. The 15-epoch exploration-warmup
+entry model reached +164.45 ticks/trade on validation and +192.55 on exploratory
+test with oracle side. This was slightly weaker than the old 79-field warmup
+model (+174.98/+196.18).
+
+Four newly trained direction seeds were evaluated as one frozen-style ensemble.
+The best full-validation policy averaged +62.29 ticks over 45 trades, but its
+robust chronological scores were -34.94 in the first half and +45.61 in the
+second. It was rejected before promotion. Exploratory test lost -108.72
+ticks/trade over 60 trades despite a 73.3% win rate; one -8,113-tick direction
+error dominated the sample. More VWAP scales did not solve dominance selection.
 
 ## Interpretation
 

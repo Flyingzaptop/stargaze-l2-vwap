@@ -7,8 +7,8 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-from stargaze_ml.gold.l2_open_events import build_open_policy_data
-from stargaze_ml.gold.frozen_policy import load_frozen_policy_bundle
+from stargaze_ml.gold.l2_open_events import VWAP_HORIZONS_SECONDS, build_open_policy_data
+from stargaze_ml.gold.frozen_policy import load_frozen_policy_bundle, policy_vwap_horizons
 
 
 def main() -> None:
@@ -20,6 +20,11 @@ def main() -> None:
     parser.add_argument("--gate-fraction", type=float, default=0.75)
     parser.add_argument("--primary-vwap", default="60")
     parser.add_argument("--feature-profile", choices=("raw", "hierarchy", "leadlag"), default="raw")
+    parser.add_argument(
+        "--vwap-horizons",
+        default=",".join(str(value) for value in VWAP_HORIZONS_SECONDS),
+        help="comma-separated causal VWAP horizons in seconds",
+    )
     parser.add_argument("--match-train-good-events", type=int)
     parser.add_argument(
         "--all-test",
@@ -45,10 +50,21 @@ def main() -> None:
     adaptive_gate_target = args.adaptive_gate_target
     adaptive_gate_initial_amplitudes = None
     adaptive_gate_initial_end_ts_ns = None
+    horizons = tuple(int(value) for value in args.vwap_horizons.split(","))
+    if (
+        tuple(sorted(set(horizons))) != horizons
+        or any(value <= 0 for value in horizons)
+        or 60 not in horizons
+    ):
+        raise ValueError(
+            "--vwap-horizons must be positive, unique, increasing and include 60"
+        )
     if args.policy_bundle is not None:
         if args.match_train_good_events:
             raise ValueError("--policy-bundle cannot be combined with amplitude recalibration")
-        preparation = load_frozen_policy_bundle(args.policy_bundle).policy["preparation"]
+        bundle = load_frozen_policy_bundle(args.policy_bundle)
+        preparation = bundle.policy["preparation"]
+        horizons = policy_vwap_horizons(bundle.policy)
         primary_text = str(preparation["primary_vwap"])
         feature_profile = str(preparation["feature_profile"])
         gate_fraction = float(preparation["gate_fraction"])
@@ -76,6 +92,7 @@ def main() -> None:
             adaptive_gate_target_per_active_day=adaptive_gate_target,
             adaptive_gate_initial_amplitude_ticks=adaptive_gate_initial_amplitudes,
             adaptive_gate_initial_end_ts_ns=adaptive_gate_initial_end_ts_ns,
+            horizons=horizons,
         )
         pilot_events = (
             (pilot.excursions.crossing_2 + 1 < train_end)
@@ -94,6 +111,7 @@ def main() -> None:
         adaptive_gate_target_per_active_day=adaptive_gate_target,
         adaptive_gate_initial_amplitude_ticks=adaptive_gate_initial_amplitudes,
         adaptive_gate_initial_end_ts_ns=adaptive_gate_initial_end_ts_ns,
+        horizons=horizons,
     )
     e = data.excursions
     np.savez_compressed(
@@ -115,6 +133,7 @@ def main() -> None:
         "rows": len(data.x), "features": list(data.feature_names),
         "primary_vwap": str(primary_vwap),
         "feature_profile": feature_profile,
+        "vwap_horizons_seconds": list(horizons),
         "direction": "handled by a separate direction model",
         "amplitude_threshold_ticks": amplitude_ticks,
         "gate_fraction": gate_fraction,

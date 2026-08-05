@@ -5,7 +5,11 @@ import torch
 import polars as pl
 import pytest
 
-from stargaze_ml.gold.l2_open_events import _carry_nonzero_sign, build_open_policy_data
+from stargaze_ml.gold.l2_open_events import (
+    VWAP_HORIZONS_SECONDS,
+    _carry_nonzero_sign,
+    build_open_policy_data,
+)
 from stargaze_ml.gold.l2_open_policy import L2OpenPolicy, exploration_probability
 from stargaze_ml.gold.l2_open_reinforce import (
     OpenReinforceConfig,
@@ -78,6 +82,11 @@ def test_threshold_entry_skips_missing_next_second_execution() -> None:
 def test_open_feature_profile_rejects_unknown_value() -> None:
     with pytest.raises(ValueError, match="feature_profile"):
         build_open_policy_data(pl.DataFrame(), feature_profile="future")
+
+
+def test_default_vwap_hierarchy_includes_requested_intermediate_scales() -> None:
+    assert 90 in VWAP_HORIZONS_SECONDS
+    assert 600 in VWAP_HORIZONS_SECONDS
 
 
 def test_event_indices_require_observed_exit_execution() -> None:

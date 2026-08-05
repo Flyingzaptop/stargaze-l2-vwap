@@ -9,7 +9,11 @@ import torch
 import polars as pl
 
 from stargaze_ml.training.data import RobustNormalizer
-from .frozen_policy import FrozenPolicyBundle, load_frozen_policy_bundle
+from .frozen_policy import (
+    FrozenPolicyBundle,
+    load_frozen_policy_bundle,
+    policy_vwap_horizons,
+)
 from .l2_causal_rate import CausalRateConfig, CausalRateController
 from .l2_contracts import (
     assert_feature_names,
@@ -49,6 +53,7 @@ def build_live_policy_view(seconds: pl.DataFrame, bundle_path: Path) -> LivePoli
         min_duration_seconds=int(preparation["min_duration_seconds"]),
         primary_vwap=primary,
         feature_profile=str(preparation["feature_profile"]),
+        horizons=policy_vwap_horizons(bundle.policy),
         adaptive_gate_target_per_active_day=preparation.get(
             "adaptive_gate_target_per_active_day"
         ),

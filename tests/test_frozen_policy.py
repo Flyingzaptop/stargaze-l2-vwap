@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from stargaze_ml.gold.frozen_policy import load_frozen_policy_bundle
+from stargaze_ml.gold.frozen_policy import load_frozen_policy_bundle, policy_vwap_horizons
 
 
 def _hash(value: bytes) -> str:
@@ -23,7 +23,7 @@ def _bundle(tmp_path: Path) -> Path:
         "risk_checkpoints": ["risk.pt"],
         "open_sha256": _hash(open_bytes),
         "risk_sha256s": [_hash(risk_bytes)],
-        "feature_names": ["x"],
+        "feature_names": ["bid_vwap_60s"],
         "preparation": {
             "primary_vwap": "60",
             "feature_profile": "raw",
@@ -50,7 +50,18 @@ def _bundle(tmp_path: Path) -> Path:
 
 def test_frozen_policy_verifies_hashes(tmp_path: Path) -> None:
     bundle = load_frozen_policy_bundle(_bundle(tmp_path))
-    assert bundle.policy["feature_names"] == ["x"]
+    assert bundle.policy["feature_names"] == ["bid_vwap_60s"]
+    assert policy_vwap_horizons(bundle.policy) == (60,)
+
+
+def test_frozen_policy_prefers_explicit_vwap_horizons(tmp_path: Path) -> None:
+    directory = _bundle(tmp_path)
+    policy_path = directory / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["preparation"]["vwap_horizons_seconds"] = [5, 60, 90, 600]
+    policy_path.write_text(json.dumps(policy), encoding="utf-8")
+    bundle = load_frozen_policy_bundle(directory)
+    assert policy_vwap_horizons(bundle.policy) == (5, 60, 90, 600)
 
 
 def test_frozen_policy_rejects_tampered_checkpoint(tmp_path: Path) -> None:

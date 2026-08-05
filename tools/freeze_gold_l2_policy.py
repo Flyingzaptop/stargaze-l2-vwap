@@ -102,6 +102,7 @@ def main() -> int:
         "preparation": {
             "primary_vwap": preparation_report["primary_vwap"],
             "feature_profile": preparation_report.get("feature_profile", "raw"),
+            "vwap_horizons_seconds": preparation_report["vwap_horizons_seconds"],
             "amplitude_threshold_ticks": preparation_report["amplitude_threshold_ticks"],
             "gate_fraction": preparation_report["gate_fraction"],
             "min_duration_seconds": preparation_report["min_duration_seconds"],

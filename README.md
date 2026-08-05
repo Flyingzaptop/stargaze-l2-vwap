@@ -28,7 +28,7 @@ is roughly 434 MB.
 raw cTrader demo L2
   -> conservative exact-timestamp snapshot reconstruction
   -> causal 1-second OHLC + first/last BBO
-  -> bid/ask quote-VWAPs: 5/10/15/30/45/60/120/300/900s
+  -> bid/ask quote-VWAPs: 5/10/15/30/45/60/90/120/300/600/900s
   -> VWAP ribbon geometry + causal PRICE<->VWAP lead/lag response
   -> excursions between price/primary-VWAP crossings
   -> fixed or causal adaptive amplitude gate
@@ -42,6 +42,8 @@ All rolling fields are causal. A decision at second `t` executes using the
 observed BBO of `t+1`; VWAP-crossing exits require the same exact BBO contract.
 Dataset splits are chronological. The historical test has been inspected across
 variants and is exploratory; the included policy is frozen for newer forward data.
+New preparations default to all eleven horizons above. Legacy frozen bundles
+carry their original nine-horizon list, so replay cannot silently change inputs.
 
 ### Installation
 

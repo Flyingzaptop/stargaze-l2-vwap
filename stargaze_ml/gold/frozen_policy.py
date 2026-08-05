@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 import numpy as np
@@ -15,6 +16,30 @@ def file_sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def policy_vwap_horizons(policy: dict[str, Any]) -> tuple[int, ...]:
+    """Return the exact feature horizons, including for pre-contract bundles."""
+
+    configured = policy["preparation"].get("vwap_horizons_seconds")
+    if configured is None:
+        pattern = re.compile(r"^bid_vwap_(\d+)s$")
+        configured = [
+            int(match.group(1))
+            for name in policy["feature_names"]
+            if (match := pattern.match(str(name))) is not None
+        ]
+    horizons = tuple(int(value) for value in configured)
+    if (
+        not horizons
+        or tuple(sorted(set(horizons))) != horizons
+        or 60 not in horizons
+        or any(value <= 0 for value in horizons)
+    ):
+        raise ValueError(
+            "frozen VWAP horizons must be positive, unique, increasing and include 60s"
+        )
+    return horizons
 
 
 @dataclass(frozen=True)
@@ -106,6 +131,7 @@ def load_frozen_policy_bundle(directory: Path) -> FrozenPolicyBundle:
     preparation_missing = sorted(preparation_required - set(preparation))
     if preparation_missing:
         raise ValueError(f"frozen preparation is missing fields: {', '.join(preparation_missing)}")
+    policy_vwap_horizons(policy)
     adaptive_target = preparation.get("adaptive_gate_target_per_active_day")
     adaptive_history = preparation.get("adaptive_gate_history_tail")
     if adaptive_target is not None:

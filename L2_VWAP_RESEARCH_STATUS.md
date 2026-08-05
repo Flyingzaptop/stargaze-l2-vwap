@@ -11,6 +11,8 @@
   direction selection.
 - Multi-horizon lead/lag, explicit VWAP hierarchy and entry-only direction
   fine-tuning did not produce a validation-stable direction edge.
+- Adding the missing 90s/600s horizons also failed strict validation and made
+  the oracle-side entry score slightly worse.
 - Some policies look profitable on full validation or exploratory test, but no
   policy survives the required chronological first-half/second-half validation.
 - Therefore no frozen policy is approved for trading. Historical bundles are

@@ -11,7 +11,7 @@ from .l2_seconds import _weighted_causal_average, build_l2_second_feature_matrix
 from .l2_adaptive_gate import causal_adaptive_gate
 
 
-VWAP_HORIZONS_SECONDS = (5, 10, 15, 30, 45, 60, 120, 300, 900)
+VWAP_HORIZONS_SECONDS = (5, 10, 15, 30, 45, 60, 90, 120, 300, 600, 900)
 VWAP_RIBBON_HORIZONS_SECONDS = (5, 10, 15, 30, 45, 60)
 
 
