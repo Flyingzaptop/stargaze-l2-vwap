@@ -18,7 +18,11 @@ from .l2_multivwap_side import _open_entries
 from .l2_open_policy import L2OpenPolicy
 from .l2_open_reinforce import OpenReinforceConfig, PreparedOpenData, _event_indices
 from .l2_profit_direction import ProfitDirectionConfig, _make_batch, executable_side_pnls
-from .l2_contracts import assert_feature_names
+from .l2_contracts import (
+    assert_feature_names,
+    assert_market_inference_contract,
+    assert_normalizer_contract,
+)
 
 
 @dataclass(frozen=True)
@@ -35,6 +39,7 @@ class RiskDirectionConfig:
     tail_weight: float = 0.5
     opportunity_weight: float = 0.25
     distillation_weight: float = 0.25
+    entry_only_training: bool = False
     seed: int = 20260808
 
 
@@ -84,6 +89,25 @@ def _auc(target: np.ndarray, score: np.ndarray, weight: np.ndarray | None = None
     if len(np.unique(target)) < 2:
         return 0.5
     return float(roc_auc_score(target, score, sample_weight=weight))
+
+
+def _restrict_mask_to_entries(
+    mask: np.ndarray,
+    events: np.ndarray,
+    event_start: np.ndarray,
+    entries: dict[int, int],
+) -> np.ndarray:
+    """Keep supervision only where the frozen open policy actually enters."""
+
+    result = np.zeros_like(mask, dtype=bool)
+    for row, event in enumerate(events):
+        entry = entries.get(int(event))
+        if entry is None:
+            continue
+        offset = int(entry) - int(event_start[int(event)])
+        if 0 <= offset < mask.shape[1] and bool(mask[row, offset]):
+            result[row, offset] = True
+    return result
 
 
 def _trade_rows(
@@ -157,6 +181,7 @@ def _summarize(
 def train_risk_direction(
     prepared_path: str|Path, open_checkpoint_path: str|Path,
     output_dir: str|Path, config: RiskDirectionConfig, *, device_name: str="auto",
+    initial_checkpoint_path: str|Path|None=None,
 ) -> dict[str,object]:
     torch.manual_seed(config.seed); np.random.seed(config.seed)
     device=torch.device("cuda" if device_name=="auto" and torch.cuda.is_available() else device_name if device_name!="auto" else "cpu")
@@ -168,11 +193,49 @@ def train_risk_direction(
     for parameter in teacher.parameters(): parameter.requires_grad_(False)
     model=L2RiskDirectionPolicy(len(data.feature_names),market.hidden_size).to(device)
     model.lstm.load_state_dict(teacher.lstm.state_dict()); model.open_head.load_state_dict(teacher.open_head.state_dict())
+    if initial_checkpoint_path is not None:
+        initial_state=torch.load(
+            Path(initial_checkpoint_path).resolve(strict=True),
+            map_location=device,weights_only=False,
+        )
+        assert_feature_names(
+            tuple(initial_state["feature_names"]),data.feature_names,
+            artifact="initial risk checkpoint",
+        )
+        assert_market_inference_contract(
+            initial_state["market_config"],asdict(market),
+            artifact="initial risk checkpoint",
+        )
+        assert_normalizer_contract(
+            initial_state["normalizer"],normalizer.to_dict(),
+            artifact="initial risk checkpoint",
+        )
+        model.load_state_dict(initial_state["model_state"])
     optimizer=torch.optim.AdamW(model.parameters(),lr=config.learning_rate)
     profit_config=ProfitDirectionConfig(pnl_scale_ticks=config.pnl_scale_ticks,
         min_side_weight=config.min_side_weight,max_side_weight=config.max_side_weight)
     train_events=_eligible_single_cross_events(data,0,data.train_end)
     val_events=_eligible_single_cross_events(data,data.train_end,data.validation_end)
+    threshold=float(checkpoint["validation"]["best"]["threshold"])
+    train_entries: dict[int, int] = {}
+    val_entries: dict[int, int] = {}
+    if config.entry_only_training:
+        train_entries = _open_entries(
+            teacher, data, normalizer, train_events, threshold, device
+        )
+        val_entries = _open_entries(
+            teacher, data, normalizer, val_events, threshold, device
+        )
+        train_events = np.asarray(
+            [event for event in train_events if int(event) in train_entries],
+            dtype=np.int64,
+        )
+        val_events = np.asarray(
+            [event for event in val_events if int(event) in val_entries],
+            dtype=np.int64,
+        )
+        if len(train_events) == 0 or len(val_events) == 0:
+            raise ValueError("entry-only training has no open-policy entries")
     rng=np.random.default_rng(config.seed); history=[]; best=-np.inf; best_state=None
     for epoch in range(config.epochs):
         head_only=epoch<config.head_only_epochs
@@ -181,6 +244,10 @@ def train_risk_direction(
         model.train(); losses=[]
         for events in _iter_batches(train_events,config.batch_size,rng):
             x,side,lv,sv,weight,mask,lengths=_make_batch(data,events,normalizer,market,profit_config)
+            if config.entry_only_training:
+                mask = _restrict_mask_to_entries(
+                    mask, events, data.event_start, train_entries
+                )
             if not np.any(mask): continue
             xt=torch.from_numpy(x).to(device); mt=torch.from_numpy(mask).to(device)
             out=_packed_heads(model,xt,lengths)
@@ -206,6 +273,10 @@ def train_risk_direction(
             for begin in range(0,len(val_events),config.batch_size):
                 events=val_events[begin:begin+config.batch_size]
                 x,side,lv,sv,weight,mask,lengths=_make_batch(data,events,normalizer,market,profit_config)
+                if config.entry_only_training:
+                    mask = _restrict_mask_to_entries(
+                        mask, events, data.event_start, val_entries
+                    )
                 out=_packed_heads(model,torch.from_numpy(x).to(device),lengths)
                 lp=np.sinh(lv)*config.pnl_scale_ticks; sp=np.sinh(sv)*config.pnl_scale_ticks
                 targets=(side,(lp<=-config.tail_threshold_ticks).astype(np.float32),(sp<=-config.tail_threshold_ticks).astype(np.float32),(np.maximum(lp,sp)>0).astype(np.float32),weight)
@@ -220,7 +291,7 @@ def train_risk_direction(
         history.append(row); print(json.dumps(row),flush=True)
         if score>best: best=score; best_state={k:v.detach().cpu().clone() for k,v in model.state_dict().items()}
     assert best_state is not None; model.load_state_dict(best_state); model.to(device); model.eval()
-    threshold=float(checkpoint["validation"]["best"]["threshold"]); splits={}
+    splits={}
     for name,left,right in (("validation",data.train_end,data.validation_end),("test",data.validation_end,len(data.x))):
         splits[name]=_trade_rows(model,teacher,data,normalizer,_event_indices(data,left,right,good_only=False),threshold,device,market,config)
     validation=splits["validation"]; test=splits["test"]; grid=[]
@@ -244,6 +315,12 @@ def train_risk_direction(
     report={
         "device":str(device),
         "config":asdict(config),
+        "supervision":{
+            "mode":"open_entry_only" if config.entry_only_training else "all_valid_event_points",
+            "train_events":int(len(train_events)),
+            "validation_events":int(len(val_events)),
+        },
+        "initialization":"risk_checkpoint" if initial_checkpoint_path is not None else "open_teacher",
         "best_selection_score":best,
         "history":history,
         "validation_grid":grid,

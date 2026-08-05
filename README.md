@@ -1,5 +1,7 @@
 # Stargaze: causal L2/VWAP research pipeline
 
+[![tests](https://github.com/Flyingzaptop/stargaze-l2-vwap/actions/workflows/tests.yml/badge.svg)](https://github.com/Flyingzaptop/stargaze-l2-vwap/actions/workflows/tests.yml)
+
 Research code for reconstructing second-level BBO/L2 state, building causal
 multi-horizon quote-VWAP features, detecting VWAP excursions, and training
 separate entry and risk-aware direction policies. The repository also contains the
@@ -198,6 +200,12 @@ python tools\evaluate_gold_l2_causal_rate.py `
   --out runs\gold_l2_multihorizon\primary_60\risk_direction\causal_rate_report.json `
   --device auto
 ```
+
+Add `--entry-only` to train direction heads only at the frozen open model's
+actual entry points. This ablation is reproducible but was rejected by the
+chronological test; the default remains supervision over all valid event points.
+`--init-risk-checkpoint` supports entry-only fine-tuning from an all-event
+checkpoint; that ablation was also rejected by fixed test.
 
 The preferred four-seed ensemble produced +44.23 ticks/trade over 40 exploratory
 holdout trades with 72.5% wins, but its standard error was 45.37 ticks and the

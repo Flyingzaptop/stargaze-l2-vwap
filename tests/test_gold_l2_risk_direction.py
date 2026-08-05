@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from stargaze_ml.gold.l2_risk_direction import _summarize
+import numpy as np
+
+from stargaze_ml.gold.l2_risk_direction import _restrict_mask_to_entries, _summarize
 
 
 def _row(long_pnl: float, short_pnl: float, long_tail: float, short_tail: float) -> dict[str, float]:
@@ -42,3 +44,11 @@ def test_risk_filter_excludes_low_scoring_trade() -> None:
         cutoff=0.95,
     )
     assert result["trades"] == 0
+
+
+def test_entry_only_mask_keeps_only_frozen_open_points() -> None:
+    mask = np.asarray([[True, True, False], [True, True, True]])
+    events = np.asarray([2, 4])
+    starts = np.asarray([0, 0, 10, 0, 20])
+    result = _restrict_mask_to_entries(mask, events, starts, {2: 11, 4: 22})
+    assert result.tolist() == [[False, True, False], [False, False, True]]

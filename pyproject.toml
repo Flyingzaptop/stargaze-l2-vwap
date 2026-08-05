@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "clean-stargaze"
 version = "0.1.0"
-description = "Causal multi-exchange BTC microstructure modeling pipeline."
+description = "Causal L2/VWAP market-microstructure research pipeline."
 requires-python = ">=3.12"
 dependencies = [
   "aiohttp>=3.9",

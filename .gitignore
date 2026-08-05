@@ -23,6 +23,7 @@ runs/
 *.pt
 !artifacts/gold_l2_v1/*.pt
 !artifacts/gold_l2_v2_ensemble/*.pt
+!artifacts/gold_l2_v3_warm15_hybrid/*.pt
 *.npz
 *.cbm
 *.db

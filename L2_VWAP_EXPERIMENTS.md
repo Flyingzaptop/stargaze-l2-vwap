@@ -119,6 +119,42 @@ more conservative hybrid: validation +52.66 ticks over 38 trades; fixed test
 It is frozen as `gold_l2_v3_warm15_hybrid` for forward A/B, not promoted over
 v2 without more untouched data.
 
+### Explicit VWAP-hierarchy profile
+
+A 99-field profile made the VWAP horizons communicate explicitly through
+adjacent-horizon spreads and their causal deltas, ribbon width/expansion,
+log-horizon slope and curvature, and cross-horizon sign consensus. The entry
+model used the same 15-epoch exploration warmup. Oracle first-cross means were
++154.40 ticks on validation and +185.37 on test, weaker than the 79-field raw
+profile (+174.98/+196.18).
+
+Four independently seeded tail-500 direction models remained unstable. Their
+fixed-test means were -18.35, +0.70, -45.63, and +28.42 ticks/trade. The
+four-seed ensemble selected a negative-tail filter on validation, where its
+robust score was -44.53. Fixed test then lost -61.83 ticks/trade over 81 trades.
+Extra causal confidence filters (side confidence, value-head gap,
+classifier/value agreement, and risk-direction margin) did not produce a
+positive robust validation policy. The hierarchy representation and filters
+remain available for research, but this trained policy is rejected.
+
+### Entry-aligned direction supervision
+
+The direction trainer can optionally supervise only the exact causal point
+where the frozen open policy first enters (`--entry-only`). This removes the
+train/inference mismatch created by supervising every valid second in an event.
+It did not improve the strategy. Four tail-500 seeds had weak validation side
+AUCs around 0.55-0.60, and their fixed-test means were -23.52, -27.03, -63.39,
+and -19.02 ticks/trade. The validation-selected ensemble had a marginal +1.43
+robust score but lost -21.80 ticks/trade over 40 fixed-test trades. The mode is
+kept as reproducible infrastructure, not as a promoted policy.
+
+A second ablation initialized each seed from its all-event checkpoint and then
+fine-tuned for five epochs at entry points only. Two seeds improved, two
+degraded. The ensemble looked strong on validation (+91.05 ticks/trade over 44,
+robust score +35.56) but lost -38.13 ticks/trade over 40 fixed-test trades.
+This sharper validation/test divergence confirms selection overfit rather than
+a robust entry-alignment gain.
+
 ## Interpretation
 
 Entry timing contains useful information: with oracle direction, most selected
