@@ -124,6 +124,15 @@ python tools\report_gold_l2_forward_ab.py `
   --out-markdown runs\gold_l2_live\forward_ab.md
 ```
 
+After recording stops, the same sequence can be run atomically end-to-end:
+
+```powershell
+python tools\finalize_gold_l2_forward.py `
+  --recording runs\gold_l2_live --out-dir runs\gold_l2_live\final `
+  --policy v2 artifacts\gold_l2_v2_ensemble `
+  --policy v3 artifacts\gold_l2_v3_warm15_hybrid
+```
+
 For parity testing, replay the same policy one causal second at a time (LSTM
 states and rate-controller state are retained exactly as they would be live):
 
