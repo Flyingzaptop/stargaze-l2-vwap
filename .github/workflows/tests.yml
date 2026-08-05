@@ -15,3 +15,5 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       - run: pytest -q
+      - run: pip install pip-audit
+      - run: pip-audit -r requirements.txt
