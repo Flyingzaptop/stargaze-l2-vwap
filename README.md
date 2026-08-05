@@ -109,6 +109,18 @@ python tools\evaluate_frozen_gold_l2_forward.py `
   --out runs\gold_l2_live\forward_report.json
 ```
 
+Combine the final recording audit and multiple frozen-policy reports without
+ranking an undersized sample:
+
+```powershell
+python tools\report_gold_l2_forward_ab.py `
+  --audit runs\gold_l2_live\audit.json `
+  --policy v2 runs\gold_l2_live\forward_v2.json `
+  --policy v3 runs\gold_l2_live\forward_v3.json `
+  --out-json runs\gold_l2_live\forward_ab.json `
+  --out-markdown runs\gold_l2_live\forward_ab.md
+```
+
 For parity testing, replay the same policy one causal second at a time (LSTM
 states and rate-controller state are retained exactly as they would be live):
 
