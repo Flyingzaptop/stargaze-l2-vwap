@@ -182,6 +182,22 @@ PnL above 0.16. The failure is a rare-trend/direction tail, not low win rate.
 
 ## Interpretation
 
+### Untouched forward capture (2026-08-04/05)
+
+A single uninterrupted demo-L2 recording produced 747,846 raw rows, 46,071
+reconstructed snapshots and 19,924 causal seconds over 5.55 observed hours.
+Observed-second coverage was 96.21%; invalid/crossed snapshots and unknown
+deletes were both zero. Source, prepared data and policy bundles are bound by
+SHA-256 in the final A/B manifest. Batch/streaming replay had zero entry or
+acceptance mismatches across all 22 completed events.
+
+The frozen v2 policy selected 11 trades: -42.91 +/- 41.06 ticks/trade, 36.4%
+wins and -285 worst. Ignoring direction, those same entries had +62.82 oracle
+ticks/trade and a positive side in 72.7% of cases; the direction policy chose
+the better side only 54.5% of the time. V3 selected no trades. This sample is
+below the 30-trade descriptive threshold and cannot rank policies, but it again
+locates the failure in direction rather than entry opportunity.
+
 Entry timing contains useful information: with oracle direction, most selected
 events have a profitable side. Direction remains the bottleneck. Tail-aware
 training and rate control materially improve it, but rare direction mistakes

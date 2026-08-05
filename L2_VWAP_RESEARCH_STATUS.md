@@ -18,8 +18,9 @@
 - Therefore no frozen policy is approved for trading. Historical bundles are
   research artifacts only.
 - A fixed probability threshold is not rate-stable across validation and test.
-- The untouched forward recorder and frozen streaming evaluator are operational;
-  fresh coverage is still too small to estimate expectancy.
+- The untouched forward recorder and frozen streaming evaluator are operational.
+  The first 5.55-hour capture had clean reconstruction but only 11/0 selected
+  v2/v3 trades, so fresh coverage is still too small to estimate expectancy.
 
 ## Completed pipeline
 
