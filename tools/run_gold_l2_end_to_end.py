@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -16,6 +17,10 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--out-dir", type=Path, required=True)
     result.add_argument("--primary-vwap", default="60")
     result.add_argument("--feature-profile", choices=("raw", "hierarchy", "leadlag"), default="raw")
+    result.add_argument(
+        "--vwap-horizons",
+        default="5,10,15,30,45,60,90,120,300,600,900",
+    )
     result.add_argument("--match-train-good-events", type=int, default=2850)
     result.add_argument("--adaptive-gate-target", type=int)
     result.add_argument("--open-epochs", type=int, default=30)
@@ -46,6 +51,7 @@ def build_commands(args: argparse.Namespace) -> list[tuple[str, list[str], Path]
         "--base", str(args.base.resolve()), "--out-dir", str(prepared_dir),
         "--primary-vwap", str(args.primary_vwap), "--match-train-good-events",
         str(args.match_train_good_events), "--feature-profile", str(args.feature_profile),
+        "--vwap-horizons", str(args.vwap_horizons),
     ]
     if args.adaptive_gate_target is not None:
         prepare_command.extend(["--adaptive-gate-target", str(args.adaptive_gate_target)])
@@ -116,6 +122,7 @@ def main() -> None:
     configuration = {
         "primary_vwap": args.primary_vwap,
         "feature_profile": args.feature_profile,
+        "vwap_horizons": args.vwap_horizons,
         "match_train_good_events": args.match_train_good_events,
         "adaptive_gate_target": args.adaptive_gate_target,
         "open_epochs": args.open_epochs,
@@ -138,9 +145,17 @@ def main() -> None:
     manifest_path = output / "pipeline_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     try:
+        root = Path(__file__).resolve().parents[1]
+        environment = os.environ.copy()
+        old_pythonpath = environment.get("PYTHONPATH")
+        environment["PYTHONPATH"] = (
+            str(root)
+            if not old_pythonpath
+            else str(root) + os.pathsep + old_pythonpath
+        )
         for name, command, artifact in commands:
             started = datetime.now(timezone.utc)
-            subprocess.run(command, cwd=Path(__file__).resolve().parents[1], check=True)
+            subprocess.run(command, cwd=root, env=environment, check=True)
             if not artifact.exists():
                 raise FileNotFoundError(f"step {name} did not create {artifact}")
             manifest["steps"].append({

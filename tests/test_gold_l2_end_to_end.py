@@ -19,6 +19,8 @@ def test_end_to_end_runner_wires_fixed_validation_contract(tmp_path: Path) -> No
     assert "500.0" in flat
     assert "20260810" in flat
     assert "--warmup-epochs" in flat
+    assert "--vwap-horizons" in flat
+    assert "5,10,15,30,45,60,90,120,300,600,900" in flat
 
 
 def test_end_to_end_runner_wires_adaptive_gate(tmp_path: Path) -> None:
