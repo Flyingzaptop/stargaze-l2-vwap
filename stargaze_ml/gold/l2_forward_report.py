@@ -4,9 +4,35 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+
 
 def _policy_summary(report: dict[str, Any]) -> dict[str, Any]:
     selected = report.get("selected", {})
+    selected_rows = report.get("selected_trades", [])
+    oracle_mean: float | None = None
+    oracle_win_rate: float | None = None
+    direction_accuracy: float | None = None
+    if selected_rows and all(
+        "long_pnl" in row and "short_pnl" in row and "selected_side" in row
+        for row in selected_rows
+    ):
+        best = np.asarray(
+            [max(float(row["long_pnl"]), float(row["short_pnl"])) for row in selected_rows],
+            dtype=np.float64,
+        )
+        chosen = np.asarray(
+            [
+                float(row["long_pnl"])
+                if int(row["selected_side"]) > 0
+                else float(row["short_pnl"])
+                for row in selected_rows
+            ],
+            dtype=np.float64,
+        )
+        oracle_mean = float(best.mean())
+        oracle_win_rate = float((best > 0).mean())
+        direction_accuracy = float(np.isclose(chosen, best).mean())
     return {
         "rows": int(report.get("rows", 0)),
         "completed_events": int(report.get("completed_events", 0)),
@@ -19,6 +45,9 @@ def _policy_summary(report: dict[str, Any]) -> dict[str, Any]:
         "p05_pnl_ticks": float(selected.get("p05_pnl_ticks", 0.0)),
         "worst_pnl_ticks": float(selected.get("worst_pnl_ticks", 0.0)),
         "standard_error_ticks": float(selected.get("standard_error_ticks", 0.0)),
+        "oracle_mean_pnl_ticks": oracle_mean,
+        "oracle_win_rate": oracle_win_rate,
+        "direction_accuracy": direction_accuracy,
     }
 
 
@@ -109,6 +138,23 @@ def forward_ab_markdown(report: dict[str, Any]) -> str:
             f"{float(policy['standard_error_ticks']):.2f} | "
             f"{100.0 * float(policy['win_rate']):.1f}% | "
             f"{float(policy['worst_pnl_ticks']):+.2f} |"
+        )
+    lines.extend(
+        (
+            "",
+            "| Policy | Oracle mean | Oracle win rate | Direction accuracy |",
+            "|---|---:|---:|---:|",
+        )
+    )
+    for name, policy in report["policies"].items():
+        oracle_mean = policy["oracle_mean_pnl_ticks"]
+        oracle_win = policy["oracle_win_rate"]
+        direction_accuracy = policy["direction_accuracy"]
+        lines.append(
+            f"| {name} | "
+            f"{'n/a' if oracle_mean is None else f'{float(oracle_mean):+.2f}'} | "
+            f"{'n/a' if oracle_win is None else f'{100.0 * float(oracle_win):.1f}%'} | "
+            f"{'n/a' if direction_accuracy is None else f'{100.0 * float(direction_accuracy):.1f}%'} |"
         )
     lines.extend(("", f"Conclusion: {report['conclusion']}.", ""))
     return "\n".join(lines)

@@ -9,6 +9,14 @@ from stargaze_ml.gold.l2_forward_report import (
 def _policy(
     trades: int, mean: float, *, source_hash: str = "seconds-a"
 ) -> dict[str, object]:
+    selected_rows = [
+        {
+            "long_pnl": mean,
+            "short_pnl": -mean,
+            "selected_side": 1,
+        }
+        for _ in range(trades)
+    ]
     return {
         "provenance": {
             "source_seconds_sha256": source_hash,
@@ -27,6 +35,7 @@ def _policy(
             "worst_pnl_ticks": mean - 3.0,
             "standard_error_ticks": 1.25,
         },
+        "selected_trades": selected_rows,
     }
 
 
@@ -45,6 +54,7 @@ def test_forward_report_refuses_to_rank_tiny_sample() -> None:
     assert "without ranking" in str(report["conclusion"])
     markdown = forward_ab_markdown(report)
     assert "| v2 | 4 | 3 | 1 | -10.00 +/- 1.25 | 50.0% | -13.00 |" in markdown
+    assert "| v2 | +10.00 | 100.0% | 0.0% |" in markdown
 
 
 def test_forward_report_marks_descriptive_threshold() -> None:
