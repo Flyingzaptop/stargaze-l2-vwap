@@ -174,6 +174,12 @@ second. It was rejected before promotion. Exploratory test lost -108.72
 ticks/trade over 60 trades despite a 73.3% win rate; one -8,113-tick direction
 error dominated the sample. More VWAP scales did not solve dominance selection.
 
+The four losses below -500 ticks totaled -12,053 ticks; the other 56 trades
+made +5,530. Their median event duration was 87s versus 41s, median eventual
+amplitude 1,286.5 versus 386.2 ticks, and median remaining time to crossing 84s
+versus 27s. No single causal entry field had an absolute rank correlation with
+PnL above 0.16. The failure is a rare-trend/direction tail, not low win rate.
+
 ## Interpretation
 
 Entry timing contains useful information: with oracle direction, most selected

@@ -174,6 +174,7 @@ def main() -> None:
         "selected_on_validation": selected,
         "validation_best_by_filter": best_by_filter,
         "fixed_test": summarize_selected(test_chosen),
+        "fixed_test_trades": test_chosen,
         "score_history_tail": all_scores[-fixed_config.history_size :],
         "frozen_policy": {
             "mode": str(selected["mode"]),
