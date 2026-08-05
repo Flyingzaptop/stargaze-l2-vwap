@@ -4,6 +4,7 @@ from stargaze_ml.gold.l2_causal_rate import (
     CausalRateConfig,
     CausalRateController,
     causal_rate_select,
+    chronological_robust_validation,
     direction_and_score,
     robust_validation_score,
     summarize_selected,
@@ -96,3 +97,27 @@ def test_direction_confidence_scores_are_causal_row_functions() -> None:
     assert abs(confidence - 0.3) < 1e-12
     assert gap == 25.0
     assert agreement == 1.0
+
+
+def test_chronological_validation_penalizes_unstable_half() -> None:
+    rows = []
+    for index, pnl in enumerate((20.0, 10.0, -100.0, -80.0)):
+        row = _row(index, pnl)
+        row.update({"selected_side": 1, "long_pnl": pnl, "short_pnl": -pnl})
+        rows.append(row)
+    result = chronological_robust_validation(
+        rows, split_ts_ns=2_000_000_000, min_trades_per_half=2
+    )
+    assert float(result["robust_scores"]["first_half"]) > 0.0
+    assert float(result["robust_scores"]["second_half"]) < 0.0
+    assert float(result["selection_score"]) < 0.0
+
+
+def test_chronological_validation_requires_trade_coverage() -> None:
+    row = _row(0, 1.0)
+    row.update({"selected_side": 1, "long_pnl": 10.0})
+    result = chronological_robust_validation(
+        [row], split_ts_ns=1_000_000_000, min_trades_per_half=1
+    )
+    assert result["coverage_valid"] is False
+    assert result["selection_score"] == -1_000_000.0

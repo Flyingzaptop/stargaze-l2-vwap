@@ -10,8 +10,8 @@ import torch
 from stargaze_ml.gold.l2_causal_rate import (
     CausalRateConfig,
     causal_rate_select,
+    chronological_robust_validation,
     direction_and_score,
-    robust_validation_score,
     summarize_selected,
 )
 from stargaze_ml.gold.l2_open_policy import L2OpenPolicy
@@ -95,6 +95,7 @@ def main() -> None:
     day_ns = 86_400_000_000_000
     val_days = max(len({int(row["entry_ts_ns"]) // day_ns for row in val_rows}), 1)
     expected = len(val_rows) / val_days
+    split_ts_ns = int(np.median([int(row["entry_ts_ns"]) for row in val_rows]))
     grid = []
     for mode in ("classifier", "value", "risk"):
         for penalty in ((0.0,) if mode != "risk" else (300.0, 600.0, 1000.0)):
@@ -116,11 +117,13 @@ def main() -> None:
                         config=config,
                     )
                     metrics = summarize_selected(chosen)
-                    robust = robust_validation_score(metrics)
+                    stability = chronological_robust_validation(
+                        chosen, split_ts_ns=split_ts_ns
+                    )
                     grid.append({
                         "mode": mode, "penalty": penalty, "filter_field": field,
                         "fallback_cutoff": fallback, "target_trades_per_day": target,
-                        "selection_score": robust, **metrics,
+                        **stability, **metrics,
                     })
     selected = max(grid, key=lambda row: float(row["selection_score"]))
     best_by_filter = {
@@ -159,6 +162,9 @@ def main() -> None:
     report = {
         "device": str(device), "checkpoint_count": len(states),
         "open_threshold": threshold,
+        "validation_split_ts_ns": split_ts_ns,
+        "validation_protocol": "minimum robust score across chronological halves with at least five trades per half",
+        "validation_approved": bool(float(selected["selection_score"]) > 0.0),
         "expected_candidates_per_day": expected,
         "selected_on_validation": selected,
         "validation_best_by_filter": best_by_filter,

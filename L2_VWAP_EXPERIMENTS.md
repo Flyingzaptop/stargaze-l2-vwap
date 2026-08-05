@@ -167,7 +167,16 @@ therefore an exploratory holdout, not a pristine final test. Before deployment,
 freeze the pipeline and evaluate once on newer untouched L2 days, then run a
 forward paper-trading period with the same execution contract.
 
-The preferred frozen four-seed bundle is in `artifacts/gold_l2_v2_ensemble`;
+As a final overfit audit, validation was split into two chronological halves.
+Every candidate must trade at least five times in each half and is scored by
+its weaker robust PnL. The historical v2 controller failed (-68.23/-72.88 by
+half); its newly selected stable-coverage alternative lost -33.99 ticks/trade
+on exploratory test. The v3 warmup hybrid was closer (-4.45/-4.38), then made
++13.36 ticks/trade over 81 exploratory test trades with 27.52-tick standard
+error. No policy has a positive strict validation score. Freezing a newly
+rejected report now requires an explicit research-only override.
+
+The legacy frozen four-seed bundle is in `artifacts/gold_l2_v2_ensemble`;
 `gold_l2_v1` preserves seed 10. Each bundle contains the open model, exact
 rolling-score history, controller settings, hashes, and preparation contract.
 The live recorder writes immutable depth and rebuilt BBO parts, so a new sample

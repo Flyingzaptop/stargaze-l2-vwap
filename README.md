@@ -8,13 +8,13 @@ separate entry and risk-aware direction policies. The repository also contains t
 multi-exchange market recorder and older BTC/XAUUSD experiments used to build
 the current pipeline.
 
-This is research software, not a profitable trading system. Current holdout
-results show that entry opportunity detection is materially easier than side
-selection. The four-seed ensemble produced +44.23 ticks/trade over 40 exploratory
-test trades, but its standard error was +45.37 ticks. Heavy-tail direction errors
-and the small sample prevent calling the strategy tradable.
+This is research software, not a profitable trading system. Entry opportunity
+detection is materially easier than side selection. Earlier four-seed results
+looked positive, but no policy survived the stricter requirement of positive
+robust performance in both chronological validation halves. Heavy-tail
+direction errors prevent calling the strategy tradable.
 
-The preferred reproducible policy is in `artifacts/gold_l2_v2_ensemble`: one
+The legacy reproducible policy is in `artifacts/gold_l2_v2_ensemble`: one
 open model, four direction seeds, and the exact causal-rate state used for
 untouched forward evaluation. `gold_l2_v1` preserves the earlier single-seed
 bundle. `gold_l2_v3_warm15_hybrid` is a forward A/B candidate: a more selective
@@ -207,10 +207,11 @@ chronological test; the default remains supervision over all valid event points.
 `--init-risk-checkpoint` supports entry-only fine-tuning from an all-event
 checkpoint; that ablation was also rejected by fixed test.
 
-The preferred four-seed ensemble produced +44.23 ticks/trade over 40 exploratory
+The legacy four-seed ensemble produced +44.23 ticks/trade over 40 exploratory
 holdout trades with 72.5% wins, but its standard error was 45.37 ticks and the
-5th percentile was -663.4 ticks. This is not evidence of deployable edge. The
-adaptive score controller uses only earlier scores and enforces a
+5th percentile was -663.4 ticks. A later chronological-half stability audit
+rejected every policy, including this one. This is not evidence of deployable
+edge. The adaptive score controller uses only earlier scores and enforces a
 validation-chosen 10-25 trade daily cap. See
 [`L2_VWAP_EXPERIMENTS.md`](L2_VWAP_EXPERIMENTS.md) for the full experiment
 ledger and limitations. Raw datasets and non-frozen runs remain gitignored.

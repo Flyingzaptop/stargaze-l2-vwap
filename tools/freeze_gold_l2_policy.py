@@ -15,6 +15,18 @@ from stargaze_ml.gold.l2_contracts import (
 from stargaze_ml.gold.frozen_policy import file_sha256
 
 
+def assert_freezable_report(
+    report: dict[str, object], *, allow_rejected_validation: bool
+) -> None:
+    if "frozen_policy" not in report or not report.get("score_history_tail"):
+        raise ValueError("rerun causal-rate evaluation before freezing the policy")
+    if report.get("validation_approved") is False and not allow_rejected_validation:
+        raise ValueError(
+            "strict chronological validation rejected this policy; "
+            "use --allow-rejected-validation only for a research-only bundle"
+        )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Freeze a complete forward-evaluation policy bundle")
     parser.add_argument("--open-checkpoint", type=Path, required=True)
@@ -22,6 +34,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-report", type=Path, required=True)
     parser.add_argument("--preparation-manifest", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--allow-rejected-validation",
+        action="store_true",
+        help="freeze a research-only bundle even when strict validation rejected it",
+    )
     return parser.parse_args()
 
 
@@ -54,8 +71,9 @@ def main() -> int:
         )
     report = json.loads(report_source.read_text(encoding="utf-8"))
     preparation_report = json.loads(preparation_source.read_text(encoding="utf-8"))
-    if "frozen_policy" not in report or not report.get("score_history_tail"):
-        raise ValueError("rerun causal-rate evaluation before freezing the policy")
+    assert_freezable_report(
+        report, allow_rejected_validation=args.allow_rejected_validation
+    )
     frozen_open_threshold = float(report.get("open_threshold", open_threshold))
     if not 0.0 <= frozen_open_threshold <= 1.0:
         raise ValueError("policy report open threshold must be in [0, 1]")

@@ -209,3 +209,38 @@ def robust_validation_score(metrics: dict[str, object]) -> float:
         + 0.10 * float(metrics.get("cvar05_pnl_ticks", 0.0))
         - 0.50 * float(metrics.get("standard_error_ticks", 0.0))
     )
+
+
+def chronological_robust_validation(
+    rows: list[dict[str, float | int]], *, split_ts_ns: int,
+    min_trades_per_half: int = 5,
+) -> dict[str, object]:
+    """Score a policy by its weakest chronological validation half."""
+
+    full = summarize_selected(rows)
+    first = summarize_selected(
+        [row for row in rows if int(row["entry_ts_ns"]) < int(split_ts_ns)]
+    )
+    second = summarize_selected(
+        [row for row in rows if int(row["entry_ts_ns"]) >= int(split_ts_ns)]
+    )
+    if min_trades_per_half < 1:
+        raise ValueError("min_trades_per_half must be positive")
+    scores = {
+        "full": robust_validation_score(full),
+        "first_half": robust_validation_score(first),
+        "second_half": robust_validation_score(second),
+    }
+    coverage_valid = (
+        int(first["trades"]) >= min_trades_per_half
+        and int(second["trades"]) >= min_trades_per_half
+    )
+    selection_score = float(min(scores.values())) if coverage_valid else -1_000_000.0
+    return {
+        "selection_score": selection_score,
+        "coverage_valid": coverage_valid,
+        "min_trades_per_half": int(min_trades_per_half),
+        "robust_scores": scores,
+        "first_half": first,
+        "second_half": second,
+    }
