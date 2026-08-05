@@ -42,6 +42,9 @@ def main() -> None:
     gate_fraction = float(args.gate_fraction)
     amplitude_ticks = float(args.amplitude_ticks)
     min_duration_seconds = 30
+    adaptive_gate_target = args.adaptive_gate_target
+    adaptive_gate_initial_amplitudes = None
+    adaptive_gate_initial_end_ts_ns = None
     if args.policy_bundle is not None:
         if args.match_train_good_events:
             raise ValueError("--policy-bundle cannot be combined with amplitude recalibration")
@@ -51,6 +54,18 @@ def main() -> None:
         gate_fraction = float(preparation["gate_fraction"])
         amplitude_ticks = float(preparation["amplitude_threshold_ticks"])
         min_duration_seconds = int(preparation["min_duration_seconds"])
+        bundle_adaptive_target = preparation.get("adaptive_gate_target_per_active_day")
+        if args.adaptive_gate_target is not None and args.adaptive_gate_target != bundle_adaptive_target:
+            raise ValueError("--adaptive-gate-target conflicts with the frozen policy bundle")
+        adaptive_gate_target = bundle_adaptive_target
+        adaptive_history = preparation.get("adaptive_gate_history_tail")
+        if adaptive_history is not None:
+            adaptive_gate_initial_amplitudes = np.asarray(
+                adaptive_history["amplitude_ticks"], dtype=np.float64
+            )
+            adaptive_gate_initial_end_ts_ns = np.asarray(
+                adaptive_history["end_ts_ns"], dtype=np.int64
+            )
     primary_vwap: int | str = "ribbon" if primary_text == "ribbon" else int(primary_text)
     if args.match_train_good_events:
         pilot = build_open_policy_data(
@@ -58,7 +73,9 @@ def main() -> None:
             gate_fraction=gate_fraction, primary_vwap=primary_vwap,
             feature_profile=feature_profile,
             min_duration_seconds=min_duration_seconds,
-            adaptive_gate_target_per_active_day=args.adaptive_gate_target,
+            adaptive_gate_target_per_active_day=adaptive_gate_target,
+            adaptive_gate_initial_amplitude_ticks=adaptive_gate_initial_amplitudes,
+            adaptive_gate_initial_end_ts_ns=adaptive_gate_initial_end_ts_ns,
         )
         pilot_events = (
             (pilot.excursions.crossing_2 + 1 < train_end)
@@ -74,7 +91,9 @@ def main() -> None:
         gate_fraction=gate_fraction, primary_vwap=primary_vwap,
         feature_profile=feature_profile,
         min_duration_seconds=min_duration_seconds,
-        adaptive_gate_target_per_active_day=args.adaptive_gate_target,
+        adaptive_gate_target_per_active_day=adaptive_gate_target,
+        adaptive_gate_initial_amplitude_ticks=adaptive_gate_initial_amplitudes,
+        adaptive_gate_initial_end_ts_ns=adaptive_gate_initial_end_ts_ns,
     )
     e = data.excursions
     np.savez_compressed(
@@ -102,11 +121,18 @@ def main() -> None:
         "gate_ticks": amplitude_ticks * gate_fraction,
         "min_duration_seconds": min_duration_seconds,
         "split_contract": "all_forward_test" if args.all_test else "borrowed_from_base",
-        "adaptive_gate_target_per_active_day": args.adaptive_gate_target,
+        "adaptive_gate_target_per_active_day": adaptive_gate_target,
         "train_events": int(train_events.sum()),
         "train_gated_events": int((train_events & e.gated).sum()),
         "train_good_events": int((train_events & e.good).sum()),
     }
+    if adaptive_gate_target is not None and args.policy_bundle is None:
+        history_count = min(2_000, len(e.end))
+        history_events = np.arange(len(e.end) - history_count, len(e.end), dtype=np.int64)
+        manifest["adaptive_gate_history_tail"] = {
+            "amplitude_ticks": e.amplitude_ticks[history_events].astype(float).tolist(),
+            "end_ts_ns": seconds["bar_start_ns"].to_numpy()[e.end[history_events]].astype(np.int64).tolist(),
+        }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps(manifest), flush=True)
 

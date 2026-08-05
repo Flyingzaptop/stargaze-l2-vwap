@@ -17,10 +17,17 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--primary-vwap", default="60")
     result.add_argument("--feature-profile", choices=("raw", "hierarchy", "leadlag"), default="raw")
     result.add_argument("--match-train-good-events", type=int, default=2850)
+    result.add_argument("--adaptive-gate-target", type=int)
     result.add_argument("--open-epochs", type=int, default=30)
+    result.add_argument("--open-warmup-epochs", type=int, default=15)
     result.add_argument("--risk-epochs", type=int, default=15)
     result.add_argument("--tail-threshold-ticks", type=float, default=500.0)
-    result.add_argument("--risk-seed", type=int, default=20260810)
+    result.add_argument(
+        "--risk-seed",
+        type=int,
+        action="append",
+        help="repeat for a seed-robust direction ensemble",
+    )
     result.add_argument("--device", default="auto")
     result.add_argument("--dry-run", action="store_true")
     return result
@@ -31,43 +38,66 @@ def build_commands(args: argparse.Namespace) -> list[tuple[str, list[str], Path]
     prepared_dir = output / "prepared"
     prepared = prepared_dir / "prepared_l2_open_policy.npz"
     open_dir = output / "open_oracle"
-    risk_dir = output / "risk_direction"
     rate_report = output / "causal_rate_report.json"
     python = sys.executable
-    return [
+    risk_seeds = args.risk_seed or [20260810]
+    prepare_command = [
+        python, "tools/prepare_gold_l2_open_policy.py", "--seconds", str(args.seconds.resolve()),
+        "--base", str(args.base.resolve()), "--out-dir", str(prepared_dir),
+        "--primary-vwap", str(args.primary_vwap), "--match-train-good-events",
+        str(args.match_train_good_events), "--feature-profile", str(args.feature_profile),
+    ]
+    if args.adaptive_gate_target is not None:
+        prepare_command.extend(["--adaptive-gate-target", str(args.adaptive_gate_target)])
+    commands: list[tuple[str, list[str], Path]] = [
         (
             "prepare",
-            [python, "tools/prepare_gold_l2_open_policy.py", "--seconds", str(args.seconds.resolve()),
-             "--base", str(args.base.resolve()), "--out-dir", str(prepared_dir),
-             "--primary-vwap", str(args.primary_vwap), "--match-train-good-events",
-             str(args.match_train_good_events), "--feature-profile", str(args.feature_profile)],
+            prepare_command,
             prepared,
         ),
         (
             "open",
             [python, "tools/train_gold_l2_open_policy.py", "--prepared", str(prepared),
              "--out-dir", str(open_dir), "--epochs", str(args.open_epochs),
+             "--warmup-epochs", str(args.open_warmup_epochs),
              "--reward-mode", "oracle_best", "--device", str(args.device)],
             open_dir / "final.pt",
         ),
-        (
-            "risk",
+    ]
+    risk_checkpoints: list[Path] = []
+    for seed in risk_seeds:
+        risk_dir = (
+            output / "risk_direction"
+            if len(risk_seeds) == 1
+            else output / f"risk_direction_seed_{seed}"
+        )
+        checkpoint = risk_dir / "final.pt"
+        risk_checkpoints.append(checkpoint)
+        commands.append((
+            "risk" if len(risk_seeds) == 1 else f"risk_seed_{seed}",
             [python, "tools/train_gold_l2_risk_direction.py", "--prepared", str(prepared),
              "--open-checkpoint", str(open_dir / "final.pt"), "--out-dir", str(risk_dir),
              "--epochs", str(args.risk_epochs), "--tail-threshold-ticks",
              str(args.tail_threshold_ticks), "--tail-weight", "1.0", "--seed",
-             str(args.risk_seed), "--device", str(args.device)],
-            risk_dir / "final.pt",
-        ),
-        (
-            "rate",
-            [python, "tools/evaluate_gold_l2_causal_rate.py", "--prepared", str(prepared),
-             "--open-checkpoint", str(open_dir / "final.pt"), "--risk-checkpoint",
-             str(risk_dir / "final.pt"), "--out", str(rate_report),
-             "--device", str(args.device)],
-            rate_report,
-        ),
-    ]
+             str(seed), "--device", str(args.device)],
+            checkpoint,
+        ))
+    if len(risk_checkpoints) == 1:
+        rate_command = [
+            python, "tools/evaluate_gold_l2_causal_rate.py", "--prepared", str(prepared),
+            "--open-checkpoint", str(open_dir / "final.pt"), "--risk-checkpoint",
+            str(risk_checkpoints[0]), "--out", str(rate_report), "--device", str(args.device),
+        ]
+    else:
+        rate_command = [
+            python, "tools/evaluate_gold_l2_risk_ensemble.py", "--prepared", str(prepared),
+            "--open-checkpoint", str(open_dir / "final.pt"),
+        ]
+        for checkpoint in risk_checkpoints:
+            rate_command.extend(["--risk-checkpoint", str(checkpoint)])
+        rate_command.extend(["--out", str(rate_report), "--device", str(args.device)])
+    commands.append(("rate", rate_command, rate_report))
+    return commands
 
 
 def _fingerprint(path: Path) -> dict[str, object]:
@@ -87,10 +117,12 @@ def main() -> None:
         "primary_vwap": args.primary_vwap,
         "feature_profile": args.feature_profile,
         "match_train_good_events": args.match_train_good_events,
+        "adaptive_gate_target": args.adaptive_gate_target,
         "open_epochs": args.open_epochs,
+        "open_warmup_epochs": args.open_warmup_epochs,
         "risk_epochs": args.risk_epochs,
         "tail_threshold_ticks": args.tail_threshold_ticks,
-        "risk_seed": args.risk_seed,
+        "risk_seeds": args.risk_seed or [20260810],
         "device": args.device,
     }
     if args.dry_run:

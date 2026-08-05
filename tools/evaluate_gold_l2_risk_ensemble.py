@@ -15,6 +15,11 @@ from stargaze_ml.gold.l2_causal_rate import (
     summarize_selected,
 )
 from stargaze_ml.gold.l2_open_policy import L2OpenPolicy
+from stargaze_ml.gold.l2_contracts import (
+    assert_feature_names,
+    assert_market_inference_contract,
+    assert_normalizer_contract,
+)
 from stargaze_ml.gold.l2_open_reinforce import OpenReinforceConfig, PreparedOpenData, _event_indices
 from stargaze_ml.gold.l2_risk_direction import L2RiskDirectionPolicy, RiskDirectionConfig
 from stargaze_ml.gold.l2_risk_ensemble import ensemble_trade_rows
@@ -28,6 +33,11 @@ def main() -> None:
     parser.add_argument("--risk-checkpoint", type=Path, action="append", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--device", default="auto")
+    parser.add_argument(
+        "--open-threshold",
+        type=float,
+        help="validation-selected threshold for a compatible replacement open model",
+    )
     args = parser.parse_args()
 
     device = torch.device(
@@ -39,12 +49,29 @@ def main() -> None:
     states = [torch.load(path, map_location=device, weights_only=False) for path in args.risk_checkpoint]
     market = OpenReinforceConfig(**states[0]["market_config"])
     normalizer = RobustNormalizer.from_dict(states[0]["normalizer"])
-    threshold = float(states[0]["open_threshold"])
+    checkpoint_threshold = float(states[0]["open_threshold"])
+    threshold = (
+        checkpoint_threshold if args.open_threshold is None else float(args.open_threshold)
+    )
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError("open threshold must be in [0, 1]")
     for state in states[1:]:
-        if state["market_config"] != states[0]["market_config"]:
-            raise ValueError("ensemble checkpoints have different market configs")
-        if float(state["open_threshold"]) != threshold:
+        assert_market_inference_contract(
+            states[0]["market_config"], state["market_config"], artifact="risk ensemble"
+        )
+        assert_normalizer_contract(
+            states[0]["normalizer"], state["normalizer"], artifact="risk ensemble"
+        )
+        if args.open_threshold is None and float(state["open_threshold"]) != checkpoint_threshold:
             raise ValueError("ensemble checkpoints have different open thresholds")
+    for state in states:
+        if "feature_names" in state:
+            assert_feature_names(
+                tuple(state["feature_names"]), data.feature_names, artifact="risk checkpoint"
+            )
+        elif int(state["model_state"]["lstm.weight_ih_l0"].shape[1]) != len(data.feature_names):
+            raise ValueError("legacy risk checkpoint input width does not match prepared features")
+    assert_feature_names(tuple(open_state["feature_names"]), data.feature_names, artifact="open checkpoint")
 
     teacher = L2OpenPolicy(len(data.feature_names), market.hidden_size).to(device)
     teacher.load_state_dict(open_state["model_state"]); teacher.eval()
@@ -129,6 +156,7 @@ def main() -> None:
     )
     report = {
         "device": str(device), "checkpoint_count": len(states),
+        "open_threshold": threshold,
         "expected_candidates_per_day": expected,
         "selected_on_validation": selected,
         "validation_best_by_filter": best_by_filter,

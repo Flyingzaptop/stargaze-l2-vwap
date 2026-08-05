@@ -15,7 +15,10 @@ and the small sample prevent calling the strategy tradable.
 The preferred reproducible policy is in `artifacts/gold_l2_v2_ensemble`: one
 open model, four direction seeds, and the exact causal-rate state used for
 untouched forward evaluation. `gold_l2_v1` preserves the earlier single-seed
-bundle. Raw/prepared L2 is excluded because it is roughly 434 MB.
+bundle. `gold_l2_v3_warm15_hybrid` is a forward A/B candidate: a more selective
+15-epoch-warmup open model with the established four-seed direction ensemble
+and a frozen `risk_evidence` controller. Raw/prepared L2 is excluded because it
+is roughly 434 MB.
 
 ## Current L2/VWAP pipeline
 
@@ -123,6 +126,11 @@ python tools\paper_gold_l2_live.py `
   --out runs\gold_l2_live\paper_decisions.json
 ```
 
+Use `artifacts\gold_l2_v3_warm15_hybrid` as the bundle for the conservative
+A/B candidate. Its historical test mean was +29.25 ticks over 40 exploratory
+trades, with 33.65-tick standard error and -451.55-tick p05; this remains
+research-only.
+
 For a complete reproducible run, use the orchestrator. It fingerprints both
 inputs and writes a step-by-step `pipeline_manifest.json`:
 
@@ -131,7 +139,8 @@ python tools\run_gold_l2_end_to_end.py `
   --seconds runs\gold_l2_policy_v2\l2_seconds.parquet `
   --base runs\gold_l2_policy_v2\prepared_l2_policy.npz `
   --out-dir runs\gold_l2_e2e `
-  --primary-vwap 60 --feature-profile raw --device auto
+  --primary-vwap 60 --feature-profile raw `
+  --open-warmup-epochs 15 --device auto
 ```
 
 ```powershell

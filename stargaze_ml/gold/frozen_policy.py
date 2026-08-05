@@ -92,6 +92,8 @@ def load_frozen_policy_bundle(directory: Path) -> FrozenPolicyBundle:
         raise ValueError("expected candidate rate must be positive")
     if int(controller["target_trades_per_day"]) <= 0:
         raise ValueError("daily trade cap must be positive")
+    if "open_threshold" in policy and not 0.0 <= float(policy["open_threshold"]) <= 1.0:
+        raise ValueError("frozen open threshold must be in [0, 1]")
     preparation = policy["preparation"]
     preparation_required = {
         "primary_vwap",
@@ -104,4 +106,21 @@ def load_frozen_policy_bundle(directory: Path) -> FrozenPolicyBundle:
     preparation_missing = sorted(preparation_required - set(preparation))
     if preparation_missing:
         raise ValueError(f"frozen preparation is missing fields: {', '.join(preparation_missing)}")
+    adaptive_target = preparation.get("adaptive_gate_target_per_active_day")
+    adaptive_history = preparation.get("adaptive_gate_history_tail")
+    if adaptive_target is not None:
+        if int(adaptive_target) <= 0:
+            raise ValueError("adaptive gate target must be positive")
+        if not isinstance(adaptive_history, dict):
+            raise ValueError("adaptive policy requires a frozen amplitude history")
+        amplitudes = np.asarray(adaptive_history.get("amplitude_ticks", []), dtype=np.float64)
+        timestamps = np.asarray(adaptive_history.get("end_ts_ns", []), dtype=np.int64)
+        if amplitudes.ndim != 1 or timestamps.shape != amplitudes.shape or not len(amplitudes):
+            raise ValueError("adaptive frozen amplitude history is empty or misaligned")
+        if not np.all(np.isfinite(amplitudes)) or np.any(amplitudes < 0):
+            raise ValueError("adaptive frozen amplitudes must be finite and non-negative")
+        if np.any(np.diff(timestamps) < 0):
+            raise ValueError("adaptive frozen timestamps must be monotonic")
+    elif adaptive_history is not None:
+        raise ValueError("fixed-gate policy cannot include adaptive amplitude history")
     return FrozenPolicyBundle(root, open_checkpoint, risk_checkpoints, policy_path, policy)

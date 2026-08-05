@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from stargaze_ml.gold.frozen_policy import load_frozen_policy_bundle
+from stargaze_ml.gold.l2_causal_rate import CausalRateConfig, causal_rate_select
 from stargaze_ml.gold.l2_frozen_runtime import FrozenL2PolicyRuntime
 from stargaze_ml.gold.l2_open_policy import L2OpenPolicy
 from stargaze_ml.gold.l2_open_reinforce import OpenReinforceConfig, PreparedOpenData, _event_indices
@@ -27,6 +28,12 @@ FIELDS = (
     "long_tail_probability",
     "short_tail_probability",
     "opportunity_probability",
+    "side_probability_std",
+    "predicted_long_pnl_std",
+    "predicted_short_pnl_std",
+    "long_tail_probability_std",
+    "short_tail_probability_std",
+    "opportunity_probability_std",
 )
 
 
@@ -51,6 +58,9 @@ def main() -> int:
     risk_state = risk_states[0]
     market = OpenReinforceConfig(**risk_state["market_config"])
     risk_configs = [RiskDirectionConfig(**state["config"]) for state in risk_states]
+    open_threshold = float(
+        bundle.policy.get("open_threshold", risk_state["open_threshold"])
+    )
     normalizer = RobustNormalizer.from_dict(risk_state["normalizer"])
     teacher = L2OpenPolicy(len(data.feature_names), market.hidden_size).to(device)
     teacher.load_state_dict(open_state["model_state"])
@@ -63,12 +73,12 @@ def main() -> int:
     if len(risk_models) == 1:
         offline = _trade_rows(
             risk_models[0], teacher, data, normalizer, events,
-            float(risk_state["open_threshold"]), device, market, risk_configs[0],
+            open_threshold, device, market, risk_configs[0],
         )
     else:
         offline = ensemble_trade_rows(
             risk_models, teacher, data, normalizer, events,
-            float(risk_state["open_threshold"]), device, market, risk_configs,
+            open_threshold, device, market, risk_configs,
         )
     runtime = FrozenL2PolicyRuntime(args.bundle, device_name=str(device))
     streaming = []
@@ -82,6 +92,26 @@ def main() -> int:
     offline_by_entry = {int(row["entry_index"]): row for row in offline}
     streaming_by_entry = {int(row["entry_index"]): row for row in streaming}
     entry_mismatches = len(set(offline_by_entry) ^ set(streaming_by_entry))
+    policy = bundle.policy["frozen_policy"]
+    offline_selected = causal_rate_select(
+        offline,
+        mode=str(policy["mode"]),
+        penalty=float(policy["penalty"]),
+        filter_field=str(policy["filter_field"]),
+        expected_candidates_per_day=float(policy["expected_candidates_per_day"]),
+        fallback_cutoff=float(policy["fallback_cutoff"]),
+        config=CausalRateConfig(
+            target_trades_per_day=int(policy["target_trades_per_day"]),
+            history_size=int(policy["history_size"]),
+            min_history=int(policy["min_history"]),
+        ),
+        initial_scores=[float(value) for value in bundle.policy["score_history_tail"]],
+    )
+    offline_accepted = {int(row["entry_index"]) for row in offline_selected}
+    streaming_accepted = {
+        int(row["entry_index"]) for row in streaming if bool(row["accepted"])
+    }
+    acceptance_mismatches = len(offline_accepted ^ streaming_accepted)
     differences = {field: [] for field in FIELDS}
     for entry in set(offline_by_entry) & set(streaming_by_entry):
         expected = offline_by_entry[entry]
@@ -96,9 +126,10 @@ def main() -> int:
         "candidates": len(offline),
         "risk_models": len(risk_models),
         "entry_mismatches": entry_mismatches,
+        "acceptance_mismatches": acceptance_mismatches,
         "max_absolute_difference": maxima,
     }
-    if entry_mismatches or max(maxima.values(), default=0.0) > 1e-4:
+    if entry_mismatches or acceptance_mismatches or max(maxima.values(), default=0.0) > 1e-4:
         raise RuntimeError(json.dumps(report))
     print(json.dumps(report, indent=2))
     return 0

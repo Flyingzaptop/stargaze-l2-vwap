@@ -11,7 +11,11 @@ import polars as pl
 from stargaze_ml.training.data import RobustNormalizer
 from .frozen_policy import FrozenPolicyBundle, load_frozen_policy_bundle
 from .l2_causal_rate import CausalRateConfig, CausalRateController
-from .l2_contracts import assert_feature_names
+from .l2_contracts import (
+    assert_feature_names,
+    assert_market_inference_contract,
+    assert_normalizer_contract,
+)
 from .l2_open_policy import L2OpenPolicy
 from .l2_open_events import build_open_policy_data
 from .l2_open_reinforce import OpenReinforceConfig, PreparedOpenData, _event_indices
@@ -36,6 +40,7 @@ def build_live_policy_view(seconds: pl.DataFrame, bundle_path: Path) -> LivePoli
     preparation = bundle.policy["preparation"]
     primary_text = str(preparation["primary_vwap"])
     primary: int | str = "ribbon" if primary_text == "ribbon" else int(primary_text)
+    adaptive_history = preparation.get("adaptive_gate_history_tail")
     policy = build_open_policy_data(
         seconds,
         tick_size=float(preparation["tick_size"]),
@@ -44,6 +49,19 @@ def build_live_policy_view(seconds: pl.DataFrame, bundle_path: Path) -> LivePoli
         min_duration_seconds=int(preparation["min_duration_seconds"]),
         primary_vwap=primary,
         feature_profile=str(preparation["feature_profile"]),
+        adaptive_gate_target_per_active_day=preparation.get(
+            "adaptive_gate_target_per_active_day"
+        ),
+        adaptive_gate_initial_amplitude_ticks=(
+            None
+            if adaptive_history is None
+            else np.asarray(adaptive_history["amplitude_ticks"], dtype=np.float64)
+        ),
+        adaptive_gate_initial_end_ts_ns=(
+            None
+            if adaptive_history is None
+            else np.asarray(adaptive_history["end_ts_ns"], dtype=np.int64)
+        ),
     )
     names = tuple(policy.feature_names)
     assert_feature_names(
@@ -88,6 +106,16 @@ class FrozenL2PolicyRuntime:
                 assert_feature_names(
                     tuple(risk_state["feature_names"]), expected_names, artifact="risk checkpoint"
                 )
+            assert_market_inference_contract(
+                risk_states[0]["market_config"],
+                risk_state["market_config"],
+                artifact="risk ensemble",
+            )
+            assert_normalizer_contract(
+                risk_states[0]["normalizer"],
+                risk_state["normalizer"],
+                artifact="risk ensemble",
+            )
         self.feature_names = expected_names
         self.market = OpenReinforceConfig(**risk_states[0]["market_config"])
         self.risk_configs = [RiskDirectionConfig(**state["config"]) for state in risk_states]
@@ -101,9 +129,17 @@ class FrozenL2PolicyRuntime:
             model.load_state_dict(state["model_state"])
             model.eval()
             self.risk_models.append(model)
-        self.open_threshold = float(risk_states[0]["open_threshold"])
-        if any(float(state["open_threshold"]) != self.open_threshold for state in risk_states[1:]):
+        checkpoint_open_threshold = float(risk_states[0]["open_threshold"])
+        if "open_threshold" not in self.bundle.policy and any(
+            float(state["open_threshold"]) != checkpoint_open_threshold
+            for state in risk_states[1:]
+        ):
             raise ValueError("risk ensemble has inconsistent open thresholds")
+        self.open_threshold = float(
+            self.bundle.policy.get("open_threshold", checkpoint_open_threshold)
+        )
+        if not 0.0 <= self.open_threshold <= 1.0:
+            raise ValueError("frozen open threshold must be in [0, 1]")
         policy = self.bundle.policy["frozen_policy"]
         self.controller = CausalRateController(
             mode=str(policy["mode"]),
@@ -131,7 +167,9 @@ class FrozenL2PolicyRuntime:
         self._open_state = None
         self._risk_states = [None for _ in self.risk_models]
 
-    def _step_models(self, row: np.ndarray) -> tuple[float, tuple[float, ...]]:
+    def _step_models(
+        self, row: np.ndarray
+    ) -> tuple[float, tuple[float, ...], tuple[float, ...]]:
         normalized = self.normalizer.transform(np.asarray(row, dtype=np.float32)[None])
         tensor = torch.from_numpy(normalized)[None].to(self.device)
         with torch.no_grad():
@@ -165,7 +203,12 @@ class FrozenL2PolicyRuntime:
                     )
                 )
         probability = float(torch.sigmoid(open_logit).cpu())
-        return probability, tuple(np.mean(np.asarray(predictions), axis=0).tolist())
+        prediction_array = np.asarray(predictions, dtype=np.float64)
+        return (
+            probability,
+            tuple(np.mean(prediction_array, axis=0).tolist()),
+            tuple(np.std(prediction_array, axis=0).tolist()),
+        )
 
     def process_index(
         self,
@@ -184,7 +227,7 @@ class FrozenL2PolicyRuntime:
             self.reset_event(event_id)
         if self._candidate_considered:
             return None
-        open_probability, risk = self._step_models(data.x[index])
+        open_probability, risk, disagreement = self._step_models(data.x[index])
         next_observed = index + 1 < len(data.x) and bool(data.observed[index + 1])
         allowed = bool(data.gate_open[index] and data.valid_feature[index])
         if require_next_observed:
@@ -193,6 +236,14 @@ class FrozenL2PolicyRuntime:
             return None
         self._candidate_considered = True
         side_probability, predicted_long, predicted_short, long_tail, short_tail, opportunity = risk
+        (
+            side_probability_std,
+            predicted_long_std,
+            predicted_short_std,
+            long_tail_std,
+            short_tail_std,
+            opportunity_std,
+        ) = disagreement
         row: dict[str, float | int | bool] = {
             "event_id": event_id,
             "entry_index": index,
@@ -204,6 +255,12 @@ class FrozenL2PolicyRuntime:
             "long_tail_probability": long_tail,
             "short_tail_probability": short_tail,
             "opportunity_probability": opportunity,
+            "side_probability_std": side_probability_std,
+            "predicted_long_pnl_std": predicted_long_std,
+            "predicted_short_pnl_std": predicted_short_std,
+            "long_tail_probability_std": long_tail_std,
+            "short_tail_probability_std": short_tail_std,
+            "opportunity_probability_std": opportunity_std,
             "next_bbo_observed": next_observed,
         }
         accepted = self.controller.consider(row)

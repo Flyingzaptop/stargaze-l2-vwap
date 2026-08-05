@@ -58,3 +58,13 @@ def test_frozen_policy_rejects_tampered_checkpoint(tmp_path: Path) -> None:
     (directory / "risk.pt").write_bytes(b"tampered")
     with pytest.raises(ValueError, match="risk checkpoint hash mismatch"):
         load_frozen_policy_bundle(directory)
+
+
+def test_adaptive_frozen_policy_requires_causal_history(tmp_path: Path) -> None:
+    directory = _bundle(tmp_path)
+    policy_path = directory / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["preparation"]["adaptive_gate_target_per_active_day"] = 400
+    policy_path.write_text(json.dumps(policy), encoding="utf-8")
+    with pytest.raises(ValueError, match="requires a frozen amplitude history"):
+        load_frozen_policy_bundle(directory)

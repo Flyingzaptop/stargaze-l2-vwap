@@ -28,6 +28,7 @@ def main() -> None:
     parser.add_argument("--risk-checkpoint", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--open-threshold", type=float)
     args = parser.parse_args()
 
     device = torch.device(
@@ -51,7 +52,13 @@ def main() -> None:
     selected = risk_state["evaluation"]["selected_on_validation"]
     mode = str(selected["mode"]); penalty = float(selected["penalty"])
     field = str(selected["filter_field"]); fallback = float(selected["cutoff"])
-    threshold = float(risk_state["open_threshold"])
+    threshold = (
+        float(risk_state["open_threshold"])
+        if args.open_threshold is None
+        else float(args.open_threshold)
+    )
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError("open threshold must be in [0, 1]")
 
     val_rows = _trade_rows(
         risk, teacher, data, normalizer,
@@ -92,6 +99,7 @@ def main() -> None:
     ]
     report = {
         "device": str(device), "mode": mode, "penalty": penalty,
+        "open_threshold": threshold,
         "filter_field": field, "fallback_cutoff": fallback,
         "expected_candidates_per_day": expected,
         "validation_grid": grid, "selected_on_validation": best,

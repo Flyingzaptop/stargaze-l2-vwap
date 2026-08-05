@@ -99,6 +99,8 @@ def build_open_policy_data(
     primary_vwap: int | str = 60,
     feature_profile: str = "leadlag",
     adaptive_gate_target_per_active_day: int | None = None,
+    adaptive_gate_initial_amplitude_ticks: np.ndarray | None = None,
+    adaptive_gate_initial_end_ts_ns: np.ndarray | None = None,
 ) -> OpenPolicyData:
     """Build causal inputs and completed excursion metadata.
 
@@ -346,6 +348,8 @@ def build_open_policy_data(
             target_gated_events_per_active_day=int(adaptive_gate_target_per_active_day),
             gate_fraction=gate_fraction,
             fallback_amplitude_ticks=amplitude_threshold_ticks,
+            initial_amplitude_ticks=adaptive_gate_initial_amplitude_ticks,
+            initial_end_ts_ns=adaptive_gate_initial_end_ts_ns,
         )
         gate_open = adaptive.gate_open
         gate_indices = adaptive.gate_index_by_event

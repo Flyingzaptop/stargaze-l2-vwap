@@ -7,7 +7,11 @@ import shutil
 
 import torch
 
-from stargaze_ml.gold.l2_contracts import assert_feature_names
+from stargaze_ml.gold.l2_contracts import (
+    assert_feature_names,
+    assert_market_inference_contract,
+    assert_normalizer_contract,
+)
 from stargaze_ml.gold.frozen_policy import file_sha256
 
 
@@ -42,14 +46,23 @@ def main() -> int:
     market_config = risk_states[0]["market_config"]
     open_threshold = float(risk_states[0]["open_threshold"])
     for state in risk_states[1:]:
-        if state["market_config"] != market_config:
-            raise ValueError("risk ensemble has inconsistent market configs")
-        if float(state["open_threshold"]) != open_threshold:
-            raise ValueError("risk ensemble has inconsistent open thresholds")
+        assert_market_inference_contract(
+            market_config, state["market_config"], artifact="risk ensemble"
+        )
+        assert_normalizer_contract(
+            risk_states[0]["normalizer"], state["normalizer"], artifact="risk ensemble"
+        )
     report = json.loads(report_source.read_text(encoding="utf-8"))
     preparation_report = json.loads(preparation_source.read_text(encoding="utf-8"))
     if "frozen_policy" not in report or not report.get("score_history_tail"):
         raise ValueError("rerun causal-rate evaluation before freezing the policy")
+    frozen_open_threshold = float(report.get("open_threshold", open_threshold))
+    if not 0.0 <= frozen_open_threshold <= 1.0:
+        raise ValueError("policy report open threshold must be in [0, 1]")
+    if "open_threshold" not in report and any(
+        float(state["open_threshold"]) != open_threshold for state in risk_states[1:]
+    ):
+        raise ValueError("mixed checkpoint thresholds require a frozen report override")
 
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -67,6 +80,7 @@ def main() -> int:
         "open_sha256": file_sha256(open_destination),
         "risk_sha256s": [file_sha256(path) for path in risk_destinations],
         "feature_names": list(expected_features),
+        "open_threshold": frozen_open_threshold,
         "preparation": {
             "primary_vwap": preparation_report["primary_vwap"],
             "feature_profile": preparation_report.get("feature_profile", "raw"),
@@ -74,6 +88,12 @@ def main() -> int:
             "gate_fraction": preparation_report["gate_fraction"],
             "min_duration_seconds": preparation_report["min_duration_seconds"],
             "tick_size": 0.01,
+            "adaptive_gate_target_per_active_day": preparation_report.get(
+                "adaptive_gate_target_per_active_day"
+            ),
+            "adaptive_gate_history_tail": preparation_report.get(
+                "adaptive_gate_history_tail"
+            ),
         },
         "frozen_policy": report["frozen_policy"],
         "score_history_tail": report["score_history_tail"],

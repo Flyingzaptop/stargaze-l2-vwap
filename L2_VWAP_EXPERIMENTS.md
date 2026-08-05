@@ -89,6 +89,36 @@ before the current decision, and applies a hard daily cap selected from
 10/15/20/25 on validation. Future-score perturbation and daily-cap behavior
 are covered by regression tests.
 
+### Adaptive excursion gate
+
+A prior-event-only rolling amplitude quantile was tested to reduce the regime
+drift of the fixed 242.5-tick gate. With a nominal target of 400 promising
+events/day, realized candidate rates were 291.5/day on train, 297.3/day on
+validation, and 313.2/day on test. The threshold is fixed at event start and
+uses only completed earlier excursions. A frozen deployment bundle also carries
+the last 2,000 causal amplitude observations so a restart does not silently
+return to the fallback threshold.
+
+Entry timing remained strong with oracle direction: validation/test first-cross
+means were +125.86/+203.33 ticks over 1,503/1,188 entries. Direction did not
+survive. The four-seed validation-selected ensemble produced -9.22 ticks over
+32 validation trades and -70.86 ticks over 14 fixed test trades. Therefore the
+adaptive gate is retained as infrastructure, but this trained adaptive policy is
+rejected and is not the preferred frozen bundle.
+
+### Longer exploration warmup
+
+The fixed-gate open policy was retrained with exploration rising for 15 full
+train passes before decaying. Oracle first-cross mean improved from
++166.30/+189.35 ticks on validation/test to +174.98/+196.18, while the number
+of entries fell from 851/2,179 to 556/1,373. Newly trained direction seeds did
+not improve test stability. Reusing the established four-seed direction models
+with the new open model and its validation-selected 0.3 threshold produced a
+more conservative hybrid: validation +52.66 ticks over 38 trades; fixed test
++29.25 over 40, 60.0% wins, 33.65-tick standard error and -451.55-tick p05.
+It is frozen as `gold_l2_v3_warm15_hybrid` for forward A/B, not promoted over
+v2 without more untouched data.
+
 ## Interpretation
 
 Entry timing contains useful information: with oracle direction, most selected

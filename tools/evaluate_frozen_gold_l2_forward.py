@@ -62,6 +62,11 @@ def main() -> int:
     if "frozen_policy" not in policy_report or not policy_report.get("score_history_tail"):
         raise ValueError("policy report lacks frozen_policy or causal score history")
     policy = policy_report["frozen_policy"]
+    open_threshold = float(
+        policy_report.get("open_threshold", risk_state["open_threshold"])
+    )
+    if not 0.0 <= open_threshold <= 1.0:
+        raise ValueError("frozen open threshold must be in [0, 1]")
 
     market = OpenReinforceConfig(**risk_state["market_config"])
     risk_configs = [RiskDirectionConfig(**state["config"]) for state in risk_states]
@@ -81,12 +86,12 @@ def main() -> int:
     if len(risk_models) == 1:
         candidates = _trade_rows(
             risk_models[0], teacher, data, normalizer, events,
-            float(risk_state["open_threshold"]), device, market, risk_configs[0],
+            open_threshold, device, market, risk_configs[0],
         )
     else:
         candidates = ensemble_trade_rows(
             risk_models, teacher, data, normalizer, events,
-            float(risk_state["open_threshold"]), device, market, risk_configs,
+            open_threshold, device, market, risk_configs,
         )
     rate_config = CausalRateConfig(
         target_trades_per_day=int(policy["target_trades_per_day"]),
@@ -110,6 +115,8 @@ def main() -> int:
         "completed_events": int(len(events)),
         "entry_candidates": len(candidates),
         "risk_models": len(risk_models),
+        "open_threshold": open_threshold,
+        "candidate_rows": candidates,
         "selected": summarize_selected(selected),
         "selected_trades": selected,
     }

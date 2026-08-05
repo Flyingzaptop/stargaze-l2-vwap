@@ -97,8 +97,15 @@ def causal_adaptive_gate(
     fallback_amplitude_ticks: float = 323.3623046875,
     quantile_bin_ticks: float = 1.0,
     max_amplitude_ticks: float = 100_000.0,
+    initial_amplitude_ticks: np.ndarray | None = None,
+    initial_end_ts_ns: np.ndarray | None = None,
 ) -> AdaptiveGateResult:
-    """Choose each event's gate from prior completed event amplitudes only."""
+    """Choose each event's gate from prior completed event amplitudes only.
+
+    ``initial_*`` seeds a deployed policy with the frozen tail of events that
+    completed before the forward sample began. Those observations are still
+    strictly causal and avoid reverting to the fallback gate after a restart.
+    """
 
     ts_ns = np.asarray(ts_ns, dtype=np.int64)
     absolute_delta_ticks = np.asarray(absolute_delta_ticks, dtype=np.float64)
@@ -126,6 +133,21 @@ def causal_adaptive_gate(
         bin_ticks=quantile_bin_ticks,
         max_ticks=max_amplitude_ticks,
     )
+    if (initial_amplitude_ticks is None) != (initial_end_ts_ns is None):
+        raise ValueError("adaptive initial amplitudes and timestamps must be provided together")
+    if initial_amplitude_ticks is not None:
+        initial_amplitudes = np.asarray(initial_amplitude_ticks, dtype=np.float64)
+        initial_timestamps = np.asarray(initial_end_ts_ns, dtype=np.int64)
+        if initial_amplitudes.ndim != 1 or initial_timestamps.shape != initial_amplitudes.shape:
+            raise ValueError("adaptive initial history arrays must be aligned vectors")
+        if not np.all(np.isfinite(initial_amplitudes)) or np.any(initial_amplitudes < 0):
+            raise ValueError("adaptive initial amplitudes must be finite and non-negative")
+        if np.any(np.diff(initial_timestamps) < 0):
+            raise ValueError("adaptive initial timestamps must be monotonic")
+        if count and len(initial_timestamps) and initial_timestamps[-1] >= ts_ns[starts[0]]:
+            raise ValueError("adaptive initial history must predate the forward sample")
+        for value, timestamp_ns in zip(initial_amplitudes, initial_timestamps, strict=True):
+            history.append(float(value), int(timestamp_ns))
     amplitude_threshold = np.empty(count, dtype=np.float64)
     gate_threshold = np.empty(count, dtype=np.float64)
     gate_index = np.full(count, -1, dtype=np.int64)

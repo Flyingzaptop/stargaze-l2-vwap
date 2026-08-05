@@ -45,6 +45,31 @@ def assert_feature_names(
     )
 
 
+def assert_market_inference_contract(
+    expected: dict[str, object], actual: dict[str, object], *, artifact: str
+) -> None:
+    """Compare only fields that change model shape or executable PnL."""
+
+    for field in (
+        "hidden_size",
+        "tick_size",
+        "commission_per_fill_ticks",
+        "slippage_per_fill_ticks",
+    ):
+        if expected.get(field) != actual.get(field):
+            raise ValueError(
+                f"{artifact} market inference contract mismatch for {field}: "
+                f"{expected.get(field)!r}/{actual.get(field)!r}"
+            )
+
+
+def assert_normalizer_contract(
+    expected: dict[str, object], actual: dict[str, object], *, artifact: str
+) -> None:
+    if expected != actual:
+        raise ValueError(f"{artifact} normalizer contract mismatch")
+
+
 def validate_prepared_open_data(data: PreparedLike) -> None:
     rows = len(data.x)
     if data.x.ndim != 2 or data.x.shape[1] != len(data.feature_names):
@@ -54,7 +79,9 @@ def validate_prepared_open_data(data: PreparedLike) -> None:
     for name in ("ts_ns", "segment_id", "valid_feature", "observed", "first_bid", "first_ask"):
         if len(getattr(data, name)) != rows:
             raise ValueError(f"prepared row array {name} has wrong length")
-    if not 0 < data.train_end < data.validation_end < rows:
+    forward_only = data.train_end == 0 and data.validation_end == 0
+    historical_split = 0 < data.train_end < data.validation_end < rows
+    if not (forward_only or historical_split):
         raise ValueError("prepared chronological split indices are invalid")
     if np.any(np.diff(data.ts_ns.astype(np.int64)) < 0):
         raise ValueError("prepared timestamps are not monotonic")
